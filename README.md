@@ -33,13 +33,13 @@ selectors. Consensus must then accept it.
 | | |
 |---|---|
 | Network | GenLayer Studio Next (chain `61997`, RPC `https://studio-next.genlayer.com/api`) |
-| Contract | [`0xeCE919A90091e146B1A01D13A1655dfC150358a7`](https://explorer-studio-next.genlayer.com/address/0xeCE919A90091e146B1A01D13A1655dfC150358a7) |
-| Deploy tx | [`0x4416d419...4a187040`](https://explorer-studio-next.genlayer.com/tx/0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040) |
+| Contract | [`0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E`](https://explorer-studio-next.genlayer.com/address/0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E) |
+| Deploy tx | [`0x2077a19b...17317f35`](https://explorer-studio-next.genlayer.com/tx/0x2077a19b1c3f526e6be4f997d0043f611b43d9839bb545284b677a0717317f35) |
 | Governor | `0x7cc9f73979a548e00981561406117c95E5f54122` |
-| Reference program | #1: a 10 GEN testnet demo vault. Its target is WETH9 on mainnet, whose Sourcify ABI was pinned by web consensus (11 functions + `fallback()`). Policy: [`SECURITY.md@5ef728a`](https://github.com/SOBEK96/ZeroDiscretion/blob/5ef728a5676b9bec20b6b172feef3d130d1fa1a0/SECURITY.md) ([register tx](https://explorer-studio-next.genlayer.com/tx/0x5468e458fb717d1457871250445db1438608206e9d958a501d3cbae31128e2b7)) |
+| Reference program | #1: a 10 GEN testnet demo vault. Target: WETH9 on mainnet (Sourcify ABI pinned by web consensus: 11 functions + `fallback()`). Sponsor status: `POLICY_ATTESTED` (WETH9 has no `owner()`). Policy: [`SECURITY.md@436d7f2`](https://github.com/SOBEK96/ZeroDiscretion/blob/436d7f2ded4ab758601b1089f278c61c004d7702/SECURITY.md) ([register tx](https://explorer-studio-next.genlayer.com/tx/0x7037972c31a18154a012dcb5e42ae8e524b511bcc90ff9158f04444f0c41ccf4)) |
 
-This deployment includes the semantic fingerprint deduplication and the target ABI verification. The previous
-deployment (`0xcd8cd3E7...5841`), where both consensus paths were exercised end to end, is kept under `superseded` in
+This deployment includes the target-only fingerprint, the target ABI verification and the sponsor authorization. Earlier
+deployments, including `0xcd8cd3E7...5841` where both consensus paths were exercised end to end, are kept under `superseded` in
 [`deployments/studio-next.json`](deployments/studio-next.json).
 
 ## Layout

@@ -2,14 +2,20 @@
   "network": "studio-next",
   "chain_id": 61997,
   "rpc_url": "https://studio-next.genlayer.com/api",
-  "contract_address": "0xeCE919A90091e146B1A01D13A1655dfC150358a7",
-  "deploy_tx_hash": "0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040",
+  "contract_address": "0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E",
+  "deploy_tx_hash": "0x2077a19b1c3f526e6be4f997d0043f611b43d9839bb545284b677a0717317f35",
   "governor": "0x7cc9f73979a548e00981561406117c95E5f54122",
   "source": "contracts/zero_discretion.py",
-  "source_sha256": "d0d35d23107064df3f2bbbbec5e7be5ff12dbb53bbd46234357cee9f908c2a1b",
+  "source_sha256": "33d7059c9a440481962504bad37dab3b42fd2525ef2023f8806ff69f8dc9ac5c",
   "runner": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng",
-  "deployed_at": "2026-09-24T11:50:14Z",
+  "deployed_at": "2026-09-24T13:58:31Z",
   "superseded": [
+    {
+      "contract_address": "0xeCE919A90091e146B1A01D13A1655dfC150358a7",
+      "deploy_tx_hash": "0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/address/0xeCE919A90091e146B1A01D13A1655dfC150358a7",
+      "deployed_at": "2026-09-24T11:50:14Z"
+    },
     {
       "contract_address": "0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841",
       "deploy_tx_hash": "0x1893f0b05bae080e6b39d68fcb8b4bd6b107311c27b40f0ea8fda97398257ef4",
@@ -33,8 +39,8 @@
       }
     }
   ],
-  "explorer_url": "https://explorer-studio-next.genlayer.com/address/0xeCE919A90091e146B1A01D13A1655dfC150358a7",
-  "deploy_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040",
+  "explorer_url": "https://explorer-studio-next.genlayer.com/address/0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E",
+  "deploy_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x2077a19b1c3f526e6be4f997d0043f611b43d9839bb545284b677a0717317f35",
   "protocol_params": {
     "challenge_bond": 2000000000000000000,
     "challenge_window": 604800,
@@ -54,7 +60,7 @@
   },
   "bootstrap_program": {
     "program_id": 1,
-    "register_tx_hash": "0x5468e458fb717d1457871250445db1438608206e9d958a501d3cbae31128e2b7",
+    "register_tx_hash": "0x7037972c31a18154a012dcb5e42ae8e524b511bcc90ff9158f04444f0c41ccf4",
     "target_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     "target_chain_id": 1,
     "target_abi_source": "sourcify",
@@ -72,13 +78,15 @@
       "0xdd62ed3e": "allowance(address,address)"
     },
     "target_has_fallback": true,
-    "policy_url": "https://github.com/SOBEK96/ZeroDiscretion/blob/5ef728a5676b9bec20b6b172feef3d130d1fa1a0/SECURITY.md",
-    "policy_raw_url": "https://raw.githubusercontent.com/SOBEK96/ZeroDiscretion/5ef728a5676b9bec20b6b172feef3d130d1fa1a0/SECURITY.md",
-    "policy_commit": "5ef728a5676b9bec20b6b172feef3d130d1fa1a0",
-    "policy_sha256": "7bcd80513c3bbf1bdb5c8cf618dd9dec8f81e0c070a110f4e1bac064a46641fd",
+    "sponsor_status": "POLICY_ATTESTED",
+    "target_owner": "",
+    "policy_url": "https://github.com/SOBEK96/ZeroDiscretion/blob/436d7f2ded4ab758601b1089f278c61c004d7702/SECURITY.md",
+    "policy_raw_url": "https://raw.githubusercontent.com/SOBEK96/ZeroDiscretion/436d7f2ded4ab758601b1089f278c61c004d7702/SECURITY.md",
+    "policy_commit": "436d7f2ded4ab758601b1089f278c61c004d7702",
+    "policy_sha256": "6ad02c4aadd70581408015990539e60d363392b3acd2dbc735f5bd42abf45f57",
     "deposit_atto": "10000000000000000000",
     "min_severity": "LOW",
-    "register_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x5468e458fb717d1457871250445db1438608206e9d958a501d3cbae31128e2b7"
+    "register_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x7037972c31a18154a012dcb5e42ae8e524b511bcc90ff9158f04444f0c41ccf4"
   },
   "solvency_after_bootstrap": {
     "balance": 10000000000000000000,
