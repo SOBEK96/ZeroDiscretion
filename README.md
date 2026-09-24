@@ -33,18 +33,14 @@ selectors. Consensus must then accept it.
 | | |
 |---|---|
 | Network | GenLayer Studio Next (chain `61997`, RPC `https://studio-next.genlayer.com/api`) |
-| Contract | [`0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841`](https://explorer-studio-next.genlayer.com/address/0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841) |
-| Deploy tx | [`0x1893f0b0...8257ef4`](https://explorer-studio-next.genlayer.com/tx/0x1893f0b05bae080e6b39d68fcb8b4bd6b107311c27b40f0ea8fda97398257ef4) |
+| Contract | [`0xeCE919A90091e146B1A01D13A1655dfC150358a7`](https://explorer-studio-next.genlayer.com/address/0xeCE919A90091e146B1A01D13A1655dfC150358a7) |
+| Deploy tx | [`0x4416d419...4a187040`](https://explorer-studio-next.genlayer.com/tx/0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040) |
 | Governor | `0x7cc9f73979a548e00981561406117c95E5f54122` |
-| Reference program | #1 - 10 GEN vault, target `0x...c0ffee`, policy [`SECURITY.md@0eefe76`](https://github.com/SOBEK96/ZeroDiscretion/blob/0eefe76da072138225148c30559d1913d93d7910/SECURITY.md) ([register tx](https://explorer-studio-next.genlayer.com/tx/0x73a645fcc106848f2c655c7bec709b4c9898105b0755c713d57fa6ca5259c1bb)) |
+| Reference program | #1: a 10 GEN testnet demo vault. Its target is WETH9 on mainnet, whose Sourcify ABI was pinned by web consensus (11 functions + `fallback()`). Policy: [`SECURITY.md@5ef728a`](https://github.com/SOBEK96/ZeroDiscretion/blob/5ef728a5676b9bec20b6b172feef3d130d1fa1a0/SECURITY.md) ([register tx](https://explorer-studio-next.genlayer.com/tx/0x5468e458fb717d1457871250445db1438608206e9d958a501d3cbae31128e2b7)) |
 
-After the bootstrap, both consensus paths were run end to end on Studio Next:
-
-* **Triage.** A bonded CRITICAL PoC against program #1 reached `MAJORITY_AGREE` and was `VALIDATED`. 5 GEN is locked, and the policy digest was pinned to the same SHA-256 the deploy script computed ([tx](https://explorer-studio-next.genlayer.com/tx/0x370e72e4972f0a82059b888cb36c4a16df6fcd34e9b17e614b9390fe63440009)).
-* **Dispute.** The program owner filed a bound `INTENDED_ADMIN_ROLE` rebuttal. Consensus dismissed it because the pinned policy excludes only `onlyOwner` functions. The 2 GEN bond is held for the researcher ([tx](https://explorer-studio-next.genlayer.com/tx/0xfcd0c7d37f6dda07a391db52739a6d8f50a34c4291efc82bf080aadac4005ca6)).
-* **Solvency.** `get_solvency()` reported `exact: true` after every step (10, 11, then 13 GEN).
-
-The full record is in [`deployments/studio-next.json`](deployments/studio-next.json).
+This deployment includes the semantic fingerprint deduplication and the target ABI verification. The previous
+deployment (`0xcd8cd3E7...5841`), where both consensus paths were exercised end to end, is kept under `superseded` in
+[`deployments/studio-next.json`](deployments/studio-next.json).
 
 ## Layout
 

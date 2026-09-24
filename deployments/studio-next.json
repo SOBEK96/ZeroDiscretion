@@ -2,15 +2,39 @@
   "network": "studio-next",
   "chain_id": 61997,
   "rpc_url": "https://studio-next.genlayer.com/api",
-  "contract_address": "0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841",
-  "deploy_tx_hash": "0x1893f0b05bae080e6b39d68fcb8b4bd6b107311c27b40f0ea8fda97398257ef4",
+  "contract_address": "0xeCE919A90091e146B1A01D13A1655dfC150358a7",
+  "deploy_tx_hash": "0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040",
   "governor": "0x7cc9f73979a548e00981561406117c95E5f54122",
   "source": "contracts/zero_discretion.py",
-  "source_sha256": "a83a353a078ff65d92dc95a6e866e40f6f4d8562586d7d87b20ee1c2c598bad4",
+  "source_sha256": "d0d35d23107064df3f2bbbbec5e7be5ff12dbb53bbd46234357cee9f908c2a1b",
   "runner": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng",
-  "deployed_at": "2026-09-24T08:07:46Z",
-  "explorer_url": "https://explorer-studio-next.genlayer.com/address/0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841",
-  "deploy_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x1893f0b05bae080e6b39d68fcb8b4bd6b107311c27b40f0ea8fda97398257ef4",
+  "deployed_at": "2026-09-24T11:50:14Z",
+  "superseded": [
+    {
+      "contract_address": "0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841",
+      "deploy_tx_hash": "0x1893f0b05bae080e6b39d68fcb8b4bd6b107311c27b40f0ea8fda97398257ef4",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/address/0xcd8cd3E7722EF7f32Fa546dB17eDC05F458B5841",
+      "deployed_at": "2026-09-24T08:07:46Z",
+      "live_verification": {
+        "note": "End-to-end consensus check on Studio Next after bootstrap: a researcher account submitted a bonded CRITICAL PoC against program #1, then the program owner filed a bound rebuttal.",
+        "report_id": 1,
+        "submit_tx_hash": "0x370e72e4972f0a82059b888cb36c4a16df6fcd34e9b17e614b9390fe63440009",
+        "submit_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x370e72e4972f0a82059b888cb36c4a16df6fcd34e9b17e614b9390fe63440009",
+        "submit_result": "MAJORITY_AGREE -> VALIDATED (CRITICAL, 5 GEN locked)",
+        "policy_digest_pinned": "8705ab9e880ef03f968abf1a33ed812dca7ba413b6f641949ff7615a27ce3116",
+        "challenge_tx_hash": "0xfcd0c7d37f6dda07a391db52739a6d8f50a34c4291efc82bf080aadac4005ca6",
+        "challenge_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0xfcd0c7d37f6dda07a391db52739a6d8f50a34c4291efc82bf080aadac4005ca6",
+        "challenge_result": "MAJORITY_AGREE -> CHALLENGE_DISMISSED (2 GEN bond forfeits to researcher at settlement)",
+        "solvency_after": {
+          "balance": "13000000000000000000",
+          "total_liabilities": "13000000000000000000",
+          "exact": true
+        }
+      }
+    }
+  ],
+  "explorer_url": "https://explorer-studio-next.genlayer.com/address/0xeCE919A90091e146B1A01D13A1655dfC150358a7",
+  "deploy_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x4416d4199c3ed4b045997d8c474e1b8be52fb89289e8842ea053d5ee4a187040",
   "protocol_params": {
     "challenge_bond": 2000000000000000000,
     "challenge_window": 604800,
@@ -30,36 +54,36 @@
   },
   "bootstrap_program": {
     "program_id": 1,
-    "register_tx_hash": "0x73a645fcc106848f2c655c7bec709b4c9898105b0755c713d57fa6ca5259c1bb",
-    "target_address": "0x0000000000000000000000000000000000c0ffee",
-    "policy_url": "https://github.com/SOBEK96/ZeroDiscretion/blob/0eefe76da072138225148c30559d1913d93d7910/SECURITY.md",
-    "policy_raw_url": "https://raw.githubusercontent.com/SOBEK96/ZeroDiscretion/0eefe76da072138225148c30559d1913d93d7910/SECURITY.md",
-    "policy_commit": "0eefe76da072138225148c30559d1913d93d7910",
-    "policy_sha256": "8705ab9e880ef03f968abf1a33ed812dca7ba413b6f641949ff7615a27ce3116",
+    "register_tx_hash": "0x5468e458fb717d1457871250445db1438608206e9d958a501d3cbae31128e2b7",
+    "target_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "target_chain_id": 1,
+    "target_abi_source": "sourcify",
+    "target_abi": {
+      "0x06fdde03": "name()",
+      "0x095ea7b3": "approve(address,uint256)",
+      "0x18160ddd": "totalSupply()",
+      "0x23b872dd": "transferFrom(address,address,uint256)",
+      "0x2e1a7d4d": "withdraw(uint256)",
+      "0x313ce567": "decimals()",
+      "0x70a08231": "balanceOf(address)",
+      "0x95d89b41": "symbol()",
+      "0xa9059cbb": "transfer(address,uint256)",
+      "0xd0e30db0": "deposit()",
+      "0xdd62ed3e": "allowance(address,address)"
+    },
+    "target_has_fallback": true,
+    "policy_url": "https://github.com/SOBEK96/ZeroDiscretion/blob/5ef728a5676b9bec20b6b172feef3d130d1fa1a0/SECURITY.md",
+    "policy_raw_url": "https://raw.githubusercontent.com/SOBEK96/ZeroDiscretion/5ef728a5676b9bec20b6b172feef3d130d1fa1a0/SECURITY.md",
+    "policy_commit": "5ef728a5676b9bec20b6b172feef3d130d1fa1a0",
+    "policy_sha256": "7bcd80513c3bbf1bdb5c8cf618dd9dec8f81e0c070a110f4e1bac064a46641fd",
     "deposit_atto": "10000000000000000000",
     "min_severity": "LOW",
-    "register_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x73a645fcc106848f2c655c7bec709b4c9898105b0755c713d57fa6ca5259c1bb"
+    "register_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x5468e458fb717d1457871250445db1438608206e9d958a501d3cbae31128e2b7"
   },
   "solvency_after_bootstrap": {
     "balance": 10000000000000000000,
     "exact": true,
     "solvent": true,
     "total_liabilities": 10000000000000000000
-  },
-  "live_verification": {
-    "note": "End-to-end consensus check on Studio Next after bootstrap: a researcher account submitted a bonded CRITICAL PoC against program #1, then the program owner filed a bound rebuttal.",
-    "report_id": 1,
-    "submit_tx_hash": "0x370e72e4972f0a82059b888cb36c4a16df6fcd34e9b17e614b9390fe63440009",
-    "submit_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0x370e72e4972f0a82059b888cb36c4a16df6fcd34e9b17e614b9390fe63440009",
-    "submit_result": "MAJORITY_AGREE -> VALIDATED (CRITICAL, 5 GEN locked)",
-    "policy_digest_pinned": "8705ab9e880ef03f968abf1a33ed812dca7ba413b6f641949ff7615a27ce3116",
-    "challenge_tx_hash": "0xfcd0c7d37f6dda07a391db52739a6d8f50a34c4291efc82bf080aadac4005ca6",
-    "challenge_tx_explorer_url": "https://explorer-studio-next.genlayer.com/tx/0xfcd0c7d37f6dda07a391db52739a6d8f50a34c4291efc82bf080aadac4005ca6",
-    "challenge_result": "MAJORITY_AGREE -> CHALLENGE_DISMISSED (2 GEN bond forfeits to researcher at settlement)",
-    "solvency_after": {
-      "balance": "13000000000000000000",
-      "total_liabilities": "13000000000000000000",
-      "exact": true
-    }
   }
 }
