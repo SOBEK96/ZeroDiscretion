@@ -297,4 +297,4 @@ Override the defaults with `VITE_GENLAYER_RPC_URL` and `VITE_CONTRACT_ADDRESS` (
 
 ## License
 
-MIT © 2026 SOBEK96 (btcehsan@yahoo.com)
+MIT © 2026 SOBEK96
