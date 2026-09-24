@@ -41,7 +41,11 @@ GITHUB_REPO = "SOBEK96/ZeroDiscretion"
 
 GEN = 10**18
 BOOTSTRAP_DEPOSIT = 10 * GEN
-BOOTSTRAP_TARGET = "0x0000000000000000000000000000000000c0ffee"
+# Reference target: canonical WETH9 on Ethereum mainnet. Registration requires
+# a Sourcify-verified ABI; WETH9 is public, ownerless and immutable. See
+# SECURITY.md: this is a testnet demonstration, not a bounty offer for WETH9.
+BOOTSTRAP_TARGET = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+BOOTSTRAP_CHAIN_ID = 1
 BOOTSTRAP_MIN_SEVERITY = "LOW"
 
 # name -> (genlayer_py chain preset, RPC override, explorer base, record file stem)
@@ -107,6 +111,8 @@ def main() -> int:
     parser.add_argument("--endpoint", help="override the network RPC endpoint")
     parser.add_argument("--address", help="use this existing deployment instead of deploying")
     parser.add_argument("--bootstrap", action="store_true", help="register the 10 GEN reference program")
+    parser.add_argument("--target", default=BOOTSTRAP_TARGET, help="bootstrap target (needs a Sourcify-verified ABI)")
+    parser.add_argument("--chain-id", type=int, default=BOOTSTRAP_CHAIN_ID, help="chain the bootstrap target lives on")
     parser.add_argument("--skip-lint", action="store_true", help="skip the genvm-lint gate")
     parser.add_argument("--retries", type=int, default=200, help="receipt polling attempts (3s apart)")
     args = parser.parse_args()
@@ -151,6 +157,9 @@ def main() -> int:
         if not address:
             print(json.dumps(receipt, indent=2, default=str), file=sys.stderr)
             raise SystemExit("deployment receipt carries no contract address")
+        superseded = [
+            {k: record[k] for k in ("contract_address", "deploy_tx_hash", "explorer_url", "deployed_at", "live_verification") if k in record}
+        ] + record.get("superseded", []) if record.get("contract_address") else record.get("superseded", [])
         record = {
             "network": stem,
             "chain_id": client.chain.id,
@@ -163,6 +172,8 @@ def main() -> int:
             "runner": source.splitlines()[1].split('"Depends": "')[1].split('"')[0],
             "deployed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
+        if superseded:
+            record["superseded"] = superseded
         if explorer:
             record["explorer_url"] = f"{explorer}/address/{address}"
             record["deploy_tx_explorer_url"] = f"{explorer}/tx/{tx_hash}"
@@ -184,7 +195,7 @@ def main() -> int:
         print("Registering reference program with a 10 GEN vault ...")
         tx_hash = client.write_contract(
             address=address, function_name="register_bounty_program", account=account,
-            value=BOOTSTRAP_DEPOSIT, args=[BOOTSTRAP_TARGET, policy_url, BOOTSTRAP_MIN_SEVERITY],
+            value=BOOTSTRAP_DEPOSIT, args=[args.target, policy_url, BOOTSTRAP_MIN_SEVERITY, args.chain_id],
             fees=client.estimate_transaction_fees({}),
         )
         print(f"  tx: {tx_hash}")
@@ -195,12 +206,20 @@ def main() -> int:
         program = read("get_program", program_id)
         if program["policy_url"] != raw_url or int(program["available"]) != BOOTSTRAP_DEPOSIT:
             raise SystemExit(f"registered program does not match the bootstrap request: {program}")
+        if program["target_address"] != args.target.lower() or not program.get("target_abi"):
+            raise SystemExit(f"registered program has no pinned target ABI: {program}")
+        print(f"  target ABI pinned by web consensus: {len(program['target_abi'])} functions, "
+              f"fallback={program['target_has_fallback']}")
         solvency = read("get_solvency")
         record["protocol_params"] = after
         record["bootstrap_program"] = {
             "program_id": program_id,
             "register_tx_hash": str(tx_hash),
-            "target_address": BOOTSTRAP_TARGET,
+            "target_address": args.target,
+            "target_chain_id": args.chain_id,
+            "target_abi_source": "sourcify",
+            "target_abi": program["target_abi"],
+            "target_has_fallback": program["target_has_fallback"],
             "policy_url": policy_url,
             "policy_raw_url": raw_url,
             "policy_commit": commit,

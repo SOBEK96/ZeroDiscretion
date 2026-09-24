@@ -4,7 +4,7 @@ import { BPS, SEVERITIES, type Severity } from "../config";
 import { useNow } from "../hooks";
 import type { Snapshot } from "../lib/chain";
 import { formatGen, parseGen, shortAddr } from "../lib/format";
-import { bountyFor, disassemble, examplePoc, meetsFloor, parsePoc, sha256Hex } from "../lib/poc";
+import { bountyFor, callPath, checkTargetSelectors, disassemble, examplePoc, fingerprint, meetsFloor, parsePoc, sha256Hex } from "../lib/poc";
 import { Card, SectionHeader, SeverityBadge } from "./ui";
 
 interface Props {
@@ -43,8 +43,18 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
 
   const minBond = params?.minResearcherBond ?? 10n ** 18n;
   const bond = parseGen(bondInput);
-  const poc = useMemo(() => (program ? parsePoc(trace, program.target) : null), [trace, program]);
-  const disasm = useMemo(() => (poc?.ok && poc.steps ? disassemble(poc.steps) : []), [poc]);
+  const poc = useMemo(() => (program ? parsePoc(trace, program.target, program.targetChainId) : null), [trace, program]);
+  const disasm = useMemo(() => (poc?.ok && poc.steps && program ? disassemble(poc.steps, program.target, program.targetAbi) : []), [poc, program]);
+  const selectorError = useMemo(
+    () => (poc?.ok && poc.steps && program ? checkTargetSelectors(poc.steps, program.target, program.targetAbi, program.targetHasFallback) : null),
+    [poc, program],
+  );
+  const fp = useMemo(() => (poc?.ok && poc.steps ? fingerprint(poc.steps) : ""), [poc]);
+  const path = useMemo(() => (poc?.ok && poc.steps && program ? callPath(poc.steps, program.target, program.targetAbi) : ""), [poc, program]);
+  const validatedPaths = useMemo(
+    () => (snapshot?.reports ?? []).filter((r) => r.programId === program?.id && r.status !== "REJECTED" && r.fingerprint),
+    [snapshot, program],
+  );
 
   useEffect(() => {
     const canonical = poc?.ok ? poc.canonical : undefined;
@@ -63,18 +73,29 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
   const checks: Check[] = useMemo(() => {
     if (!program || !params) return [];
     const closed = program.status === "CLOSED" || (program.status === "CLOSING" && now >= program.closesAt);
-    const duplicate = pocHash !== "" && (snapshot?.reports ?? []).some((r) => r.programId === program.id && r.pocHash === pocHash && r.status !== "REJECTED");
+    const duplicateOf = fp ? validatedPaths.find((r) => r.fingerprint === fp) : undefined;
     return [
       { label: "Program accepts submissions", ok: !closed, code: "ERR_PROGRAM_CLOSED" },
       { label: `Bond >= ${formatGen(minBond)} GEN`, ok: bond !== null && bond >= minBond, code: "ERR_INSUFFICIENT_BOND" },
       { label: `Severity meets program floor (${program.minSeverity})`, ok: meetsFloor(severity, program.minSeverity), code: "ERR_BELOW_MIN_SEVERITY" },
       { label: "Reporter is not the program owner", ok: !account || account.toLowerCase() !== program.owner.toLowerCase(), code: "ERR_SELF_REPORT" },
       { label: "Description within 8000 characters", ok: description.length <= MAX_DESCRIPTION, code: "ERR_INPUT_TOO_LARGE" },
-      { label: "PoC trace schema and target binding", ok: Boolean(poc?.ok), code: poc?.error?.code, detail: poc?.error?.detail },
-      { label: "PoC not already accepted for this program", ok: !duplicate, code: "ERR_DUPLICATE_REPORT" },
+      { label: `PoC schema, target and chain ${program.targetChainId} binding`, ok: Boolean(poc?.ok), code: poc?.error?.code, detail: poc?.error?.detail },
+      {
+        label: "Target selectors exist in the verified ABI",
+        ok: Boolean(poc?.ok) && !selectorError,
+        code: selectorError?.code,
+        detail: selectorError?.detail,
+      },
+      {
+        label: "Execution path not already validated",
+        ok: !duplicateOf,
+        code: "ERR_DUPLICATE_VULNERABILITY",
+        detail: duplicateOf ? `same fingerprint as report #${duplicateOf.id}` : undefined,
+      },
       { label: "Vault can fund this tier", ok: bounty > 0n, code: "ERR_VAULT_DEPLETED" },
     ];
-  }, [program, params, bond, minBond, severity, account, description, poc, pocHash, snapshot, bounty, now]);
+  }, [program, params, bond, minBond, severity, account, description, poc, selectorError, fp, validatedPaths, bounty, now]);
 
   const allOk = checks.length > 0 && checks.every((c) => c.ok) && trace.length > 0;
 
@@ -148,7 +169,7 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
             <div className="mb-1.5 flex items-center justify-between">
               <label className="label !mb-0" htmlFor="zd-trace">PoC trace (JSON calldata steps)</label>
               {program && (
-                <button type="button" className="inline-flex items-center gap-1 text-xs text-sky-300 hover:text-sky-200" onClick={() => setTrace(examplePoc(program.target))}>
+                <button type="button" className="inline-flex items-center gap-1 text-xs text-sky-300 hover:text-sky-200" onClick={() => setTrace(examplePoc(program.target, program.targetChainId, program.targetAbi))}>
                   <Sparkles size={12} /> Load template
                 </button>
               )}
@@ -212,8 +233,8 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
             </span>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-            Runs the contract's deterministic pre-consensus checks locally: the same parser, canonical hash and disassembly every validator
-            computes. The LLM severity verdict is only decided on-chain.
+            Runs the contract's deterministic pre-consensus checks locally: the same parser, selector gate against the Sourcify-verified ABI,
+            semantic fingerprint and disassembly every validator computes. The LLM verdicts (severity, padded duplicates) are only decided on-chain.
           </p>
 
           <ul className="mt-3 space-y-1.5">
@@ -229,16 +250,42 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
             ))}
           </ul>
 
-          {pocHash && (
+          {fp && (
+            <div className="mt-4 space-y-2">
+              <div>
+                <p className="label">Semantic fingerprint (keccak256 of execution path)</p>
+                <p className="break-all rounded-lg bg-slate-950/70 px-2 py-1.5 font-mono text-[11px] text-emerald-200">{fp}</p>
+              </div>
+              <div>
+                <p className="label">Execution path</p>
+                <p className="break-all rounded-lg bg-slate-950/70 px-2 py-1.5 font-mono text-[11px] text-slate-300">{path}</p>
+              </div>
+              {pocHash && (
+                <div>
+                  <p className="label">Exact trace hash (sha256, binds rebuttals)</p>
+                  <p className="break-all rounded-lg bg-slate-950/70 px-2 py-1.5 font-mono text-[11px] text-sky-200">{pocHash}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {validatedPaths.length > 0 && (
             <div className="mt-4">
-              <p className="label">Canonical PoC hash (sha256)</p>
-              <p className="break-all rounded-lg bg-slate-950/70 px-2 py-1.5 font-mono text-[11px] text-sky-200">{pocHash}</p>
+              <p className="label">Already validated in this program ({validatedPaths.length})</p>
+              <ul className="max-h-28 space-y-1 overflow-auto text-[11px]">
+                {validatedPaths.map((r) => (
+                  <li key={r.id} className={`rounded-md px-2 py-1 font-mono ${r.fingerprint === fp ? "bg-rose-500/15 text-rose-200" : "bg-slate-950/60 text-slate-400"}`}>
+                    #{r.id} {r.callPath}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-slate-500">A padded variant of any of these is judged a duplicate by consensus and forfeits the bond.</p>
             </div>
           )}
 
           {disasm.length > 0 && (
             <div className="mt-4 min-w-0">
-              <p className="label">Deterministic disassembly - validator ground truth</p>
+              <p className="label">Calldata disassembly, resolved against the verified ABI</p>
               <div className="max-h-64 overflow-auto rounded-lg border border-sky-400/10">
                 <table className="w-full text-left font-mono text-[11px]">
                   <thead className="sticky top-0 bg-slate-900 text-slate-500">
@@ -246,6 +293,7 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
                       <th className="px-2 py-1.5">#</th>
                       <th className="px-2 py-1.5">to</th>
                       <th className="px-2 py-1.5">selector</th>
+                      <th className="px-2 py-1.5">function</th>
                       <th className="px-2 py-1.5">words</th>
                       <th className="px-2 py-1.5">bytes</th>
                     </tr>
@@ -256,6 +304,7 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
                         <td className="px-2 py-1.5 text-slate-500">{d.index}</td>
                         <td className={`px-2 py-1.5 ${d.to === program?.target.toLowerCase() ? "text-sky-300" : "text-slate-300"}`}>{shortAddr(d.to)}</td>
                         <td className="px-2 py-1.5 text-amber-200">{d.selector}</td>
+                        <td className={`px-2 py-1.5 ${d.function === "unresolved" ? "text-rose-300" : d.function === "external" ? "text-slate-500" : "text-emerald-200"}`}>{d.function}</td>
                         <td className="px-2 py-1.5 text-slate-400">
                           {d.word_count}
                           {d.words[0] && <span className="block max-w-[14rem] truncate text-slate-600" title={d.words.join("\n")}>{d.words[0]}</span>}

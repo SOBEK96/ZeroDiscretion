@@ -14,6 +14,7 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from eth_utils.crypto import keccak
 
 CONTRACT = "contracts/zero_discretion.py"
 
@@ -48,6 +49,45 @@ Critical issues (direct theft of deposits) are paid from the ZeroDiscretion vaul
 
 WITHDRAW_SELECTOR = "0x2e1a7d4d"  # withdraw(uint256)
 SET_FEE_SELECTOR = "0x69fe0e2d"   # setFee(uint256)
+FAKE_SELECTOR = "0xdeadbeef"      # not a function of the target
+
+
+def selector(signature: str) -> str:
+    """Independent keccak (eth_utils) used to cross-check the contract's."""
+    return "0x" + keccak(text=signature)[:4].hex()
+
+
+# Functions exercised by variant PoCs: distinct selectors give distinct
+# execution paths, hence distinct semantic fingerprints.
+VARIANT_FUNCTIONS = [f"op{n}(uint256)" for n in range(16)]
+
+
+def abi_entry(signature: str) -> dict:
+    name, args = signature[:-1].split("(", 1)
+    return {"type": "function", "name": name, "stateMutability": "nonpayable", "outputs": [],
+            "inputs": [{"name": f"a{i}", "type": t} for i, t in enumerate(a for a in args.split(",") if a)]}
+
+
+TARGET_ABI = [abi_entry(sig) for sig in ["deposit(uint256)", "withdraw(uint256)", "setFee(uint256)", *VARIANT_FUNCTIONS]] + [
+    {"type": "event", "name": "Withdrawn", "inputs": [], "anonymous": False},
+    {"type": "constructor", "inputs": []},
+]
+
+
+def sourcify_body(abi, address: str = TARGET, proxy_impls=None) -> str:
+    return json.dumps({
+        "abi": abi,
+        "match": "match",
+        "chainId": "1",
+        "address": address,
+        "proxyResolution": {"isProxy": bool(proxy_impls), "proxyType": "EIP1967Proxy" if proxy_impls else None,
+                            "implementations": [{"address": a, "name": "Impl"} for a in (proxy_impls or [])]},
+    })
+
+
+def mock_sourcify(vm, address: str = TARGET, abi=None, status: int = 200, proxy_impls=None, chain: int = 1) -> None:
+    body = sourcify_body(TARGET_ABI if abi is None else abi, address, proxy_impls) if status == 200 else '{"error":"not found"}'
+    vm.mock_web(rf"sourcify\.dev/server/v2/contract/{chain}/{address.lower()}", {"status": status, "body": body})
 
 
 def iso(ts: int) -> str:
@@ -74,12 +114,19 @@ def make_poc(target: str = TARGET, steps=None, chain_id: int = 1) -> str:
     })
 
 
+def variant_poc(n: int, prefix_steps=()) -> str:
+    """A valid PoC whose execution path differs from every other variant."""
+    steps = list(prefix_steps) + [{"to": TARGET, "calldata": selector(VARIANT_FUNCTIONS[n]) + word(n + 1), "value": "0"}]
+    return make_poc(steps=steps)
+
+
 def canonical_hash(poc_trace: str) -> str:
     obj = json.loads(poc_trace)
     steps = []
     for s in obj["steps"]:
         steps.append({"to": s["to"].lower(), "calldata": s["calldata"].lower(),
-                      "value": str(int(s.get("value", "0"))), "expect": s.get("expect", "")})
+                      "value": str(int(s.get("value", "0"))), "expect": s.get("expect", ""),
+                      "route": s.get("route", "selector")})
     normalized = {"target": obj["target"].lower(), "chain_id": obj["chain_id"],
                   "invariant_broken": obj["invariant_broken"].strip(), "steps": steps}
     canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
@@ -112,10 +159,10 @@ def mock_policy(vm, text: str = POLICY_TEXT, status: int = 200) -> None:
     vm.mock_web(r"raw\.githubusercontent\.com/acme-defi/vault-core/", {"status": status, "body": text})
 
 
-def mock_triage(vm, reproducible=True, in_scope=True, assessed="CRITICAL",
+def mock_triage(vm, reproducible=True, in_scope=True, assessed="CRITICAL", duplicate=False,
                 reasoning="Step 1 drains the vault; no balance check.") -> None:
     vm.mock_llm(r"ZERO_DISCRETION_TRIAGE", _llm({
-        "reproducible": reproducible, "in_scope": in_scope,
+        "reproducible": reproducible, "in_scope": in_scope, "duplicate_of_prior": duplicate,
         "assessed_severity": assessed, "reasoning": reasoning,
     }))
 
@@ -127,9 +174,10 @@ def mock_rebuttal(vm, bound=True, outcome="DISMISSED", revised="NONE",
     }))
 
 
-def remock(vm, *, policy=None, triage=None, rebuttal=None) -> None:
+def remock(vm, *, policy=None, triage=None, rebuttal=None, sourcify=None) -> None:
     """Reset every mock and install fresh ones (first registered match wins)."""
     vm.clear_mocks()
+    mock_sourcify(vm, **(sourcify or {}))
     mock_policy(vm, **(policy or {}))
     mock_triage(vm, **(triage or {}))
     mock_rebuttal(vm, **(rebuttal or {}))
@@ -170,8 +218,9 @@ class Chain:
 
     # Lifecycle shortcuts ------------------------------------------------
 
-    def register(self, owner, deposit: int = PROGRAM_DEPOSIT, min_severity: str = "LOW") -> int:
-        return self.call(owner, "register_bounty_program", TARGET, POLICY_URL, min_severity, value=deposit)
+    def register(self, owner, deposit: int = PROGRAM_DEPOSIT, min_severity: str = "LOW",
+                 target: str = TARGET, chain: int = 1) -> int:
+        return self.call(owner, "register_bounty_program", target, POLICY_URL, min_severity, chain, value=deposit)
 
     def submit(self, researcher, program_id: int, severity: str = "CRITICAL",
                poc: str | None = None, bond: int = RESEARCHER_BOND, description: str = "Unchecked withdraw.") -> int:

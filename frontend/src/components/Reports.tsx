@@ -73,6 +73,7 @@ function RebuttalBuilder({ report, disasm, challengeBond, onChallenge, onDone }:
               <input type="checkbox" className="accent-rose-400" checked={on} onChange={() => setSteps(on ? steps.filter((s) => s !== d.index) : [...steps, d.index])} />
               <span className="text-slate-500">step {d.index}</span>
               <span className="text-amber-200">{d.selector}</span>
+              <span className="truncate text-emerald-200">{d.function}</span>
               <span className="truncate text-slate-400">to {shortAddr(d.to)}</span>
               <span className="ml-auto text-slate-500">{d.word_count} words</span>
             </label>
@@ -127,8 +128,8 @@ function ReportCard({ report, program, account, now, challengeBond, feeBps, acti
   const [showTrace, setShowTrace] = useState(false);
   const [busy, setBusy] = useState(false);
   const disasm = useMemo(() => {
-    const parsed = program ? parsePoc(report.pocTrace, program.target) : null;
-    return parsed?.ok && parsed.steps ? disassemble(parsed.steps) : [];
+    const parsed = program ? parsePoc(report.pocTrace, program.target, program.targetChainId) : null;
+    return parsed?.ok && parsed.steps && program ? disassemble(parsed.steps, program.target, program.targetAbi) : [];
   }, [report.pocTrace, program]);
 
   const isOwner = Boolean(account && program && account.toLowerCase() === program.owner.toLowerCase());
@@ -169,6 +170,17 @@ function ReportCard({ report, program, account, now, challengeBond, feeBps, acti
 
       {report.description && <p className="mt-3 line-clamp-3 text-sm text-slate-300">{report.description}</p>}
 
+      {report.callPath && (
+        <p className="mt-2 break-all font-mono text-[11px] text-slate-500" title={`fingerprint ${report.fingerprint}`}>
+          path {report.callPath}
+        </p>
+      )}
+      {report.status === "REJECTED" && report.rejectionReason && (
+        <p className="mt-1 text-[11px] text-rose-300">
+          Rejected: {report.rejectionReason === "ERR_DUPLICATE_VULNERABILITY" ? "duplicate of an already validated vulnerability" : "consensus triage did not support the claim"}
+        </p>
+      )}
+
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Bounty locked" value={`${formatGen(report.bounty)} GEN`} hint={report.bounty > 0n ? `net ${formatGen(report.bounty - fee)} after fee` : undefined} />
         <Stat label="Researcher bond" value={`${formatGen(report.researcherBond)} GEN`} />
@@ -207,6 +219,7 @@ function ReportCard({ report, program, account, now, challengeBond, feeBps, acti
                   <td className="px-2 py-1.5 text-slate-500">{d.index}</td>
                   <td className="px-2 py-1.5 text-slate-300">{shortAddr(d.to)}</td>
                   <td className="px-2 py-1.5 text-amber-200">{d.selector}</td>
+                  <td className="px-2 py-1.5 text-emerald-200">{d.function}</td>
                   <td className="px-2 py-1.5 text-slate-500">{d.word_count} words / {d.calldata_bytes} bytes</td>
                 </tr>
               ))}

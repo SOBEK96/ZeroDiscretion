@@ -4,6 +4,7 @@
 // will compute before a bonded transaction is sent. The LLM verdict itself is
 // non-deterministic and is never simulated here.
 
+import { keccak256, stringToBytes } from "viem";
 import { BPS, SEVERITY_RANK } from "../config";
 
 const MAX_POC_CHARS = 32_000;
@@ -13,17 +14,22 @@ const DISASM_WORDS_SHOWN = 8;
 const MIN_ARGUMENT_CHARS = 32;
 const MAX_ARGUMENT_CHARS = 8_000;
 
+export type Route = "selector" | "fallback";
+
 export interface PocStep {
   to: string;
   calldata: string;
   value: string;
   expect: string;
+  route: Route;
 }
 
 export interface DisasmStep {
   index: number;
   to: string;
   selector: string;
+  route: Route;
+  function: string;
   value: string;
   word_count: number;
   words: string[];
@@ -73,7 +79,7 @@ export async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function parsePoc(trace: string, programTarget: string): PocCheck {
+export function parsePoc(trace: string, programTarget: string, programChain: number): PocCheck {
   if (!trace) return fail("ERR_MALFORMED_POC", "empty trace");
   if (trace.length > MAX_POC_CHARS) return fail("ERR_INPUT_TOO_LARGE", "poc_trace exceeds 32000 characters");
   let obj: unknown;
@@ -91,6 +97,7 @@ export function parsePoc(trace: string, programTarget: string): PocCheck {
 
   const chainId = o.chain_id;
   if (typeof chainId !== "number" || !Number.isInteger(chainId) || chainId <= 0) return fail("ERR_MALFORMED_POC", "chain_id must be a positive integer");
+  if (chainId !== programChain) return fail("ERR_POC_CHAIN_MISMATCH", `program target lives on chain ${programChain}`);
 
   const inv = o.invariant_broken;
   if (typeof inv !== "string" || inv.trim().length < 8 || inv.trim().length > 1000)
@@ -117,8 +124,10 @@ export function parsePoc(trace: string, programTarget: string): PocCheck {
       return fail("ERR_MALFORMED_POC", `step ${i}: value must be a decimal wei string`);
     const expect = st.expect ?? "";
     if (typeof expect !== "string" || expect.length > 500) return fail("ERR_MALFORMED_POC", `step ${i}: expect must be <= 500 characters`);
+    const route = st.route ?? "selector";
+    if (route !== "selector" && route !== "fallback") return fail("ERR_MALFORMED_POC", `step ${i}: route must be selector or fallback`);
     if (to === target) hitsTarget = true;
-    steps.push({ to, calldata: cd, value: BigInt(value).toString(), expect });
+    steps.push({ to, calldata: cd, value: BigInt(value).toString(), expect, route });
   }
   if (!hitsTarget) return fail("ERR_POC_TARGET_MISMATCH", "no step calls the program target");
 
@@ -126,17 +135,21 @@ export function parsePoc(trace: string, programTarget: string): PocCheck {
   return { ok: true, canonical: pyCanonicalJson(normalized), steps, chainId, invariant: inv.trim() };
 }
 
-export function disassemble(steps: PocStep[]): DisasmStep[] {
+export function disassemble(steps: PocStep[], target = "", abi: Record<string, string> = {}): DisasmStep[] {
+  const t = target.toLowerCase();
   return steps.map((s, index) => {
     const body = s.calldata.slice(2);
     const args = body.slice(8);
     const full = Math.floor(args.length / 64);
     const words: string[] = [];
     for (let w = 0; w < Math.min(full, DISASM_WORDS_SHOWN); w++) words.push("0x" + args.slice(w * 64, (w + 1) * 64));
+    const selector = "0x" + body.slice(0, 8);
     return {
       index,
       to: s.to,
-      selector: "0x" + body.slice(0, 8),
+      selector,
+      route: s.route,
+      function: s.to !== t ? "external" : s.route === "fallback" ? "fallback()" : (abi[selector] ?? "unresolved"),
       value: s.value,
       word_count: full,
       words,
@@ -144,6 +157,45 @@ export function disassemble(steps: PocStep[]): DisasmStep[] {
       calldata_bytes: body.length / 2,
     };
   });
+}
+
+// Mirrors _check_target_selectors: returns the contract error it would raise.
+export function checkTargetSelectors(
+  steps: PocStep[],
+  target: string,
+  abi: Record<string, string>,
+  hasFallback: boolean,
+): { code: string; detail: string } | null {
+  const t = target.toLowerCase();
+  for (const [i, s] of steps.entries()) {
+    if (s.to !== t) continue;
+    const sel = s.calldata.slice(0, 10);
+    if (s.route === "fallback") {
+      if (sel in abi) return { code: "ERR_MALFORMED_POC", detail: `step ${i}: ${sel} is a target function, not a fallback entry` };
+      if (!hasFallback) return { code: "ERR_SELECTOR_NOT_FOUND_ON_TARGET", detail: `step ${i}: target has no fallback()` };
+    } else if (!(sel in abi)) {
+      return { code: "ERR_SELECTOR_NOT_FOUND_ON_TARGET", detail: `step ${i}: ${sel} is not a function of the verified target ABI` };
+    }
+  }
+  return null;
+}
+
+// Mirrors _fingerprint: keccak256 over the ordered (address, selector) path;
+// fallback entries collapse to the symbol "fallback".
+export function fingerprint(steps: PocStep[]): string {
+  const pairs = steps.map((s) => [s.to, s.route === "fallback" ? "fallback" : s.calldata.slice(0, 10)]);
+  return keccak256(stringToBytes(JSON.stringify(pairs))).slice(2);
+}
+
+export function callPath(steps: PocStep[], target: string, abi: Record<string, string>): string {
+  const t = target.toLowerCase();
+  return steps
+    .map((s) => {
+      const sel = s.calldata.slice(0, 10);
+      if (s.to !== t) return `${s.to}.${sel}`;
+      return "target." + (s.route === "fallback" ? "fallback()" : (abi[sel] ?? sel));
+    })
+    .join(" > ");
 }
 
 export function bountyFor(available: bigint, severity: string, payoutBps: Record<string, number>): bigint {
@@ -184,17 +236,25 @@ export function buildRebuttal(d: RebuttalDraft, disasm: DisasmStep[]): { json: s
 
 const word = (n: bigint) => n.toString(16).padStart(64, "0");
 
-export function examplePoc(target: string): string {
+// A template whose target steps use real functions of the pinned ABI, with
+// zero-filled static arguments. Researchers replace the arguments.
+export function examplePoc(target: string, chainId: number, abi: Record<string, string>): string {
+  const entries = Object.entries(abi);
+  const pick = (name: string) => entries.find(([, sig]) => sig.startsWith(name + "("));
+  const chosen = [pick("deposit"), pick("withdraw")].filter(Boolean) as [string, string][];
+  const fns = chosen.length > 0 ? chosen : entries.slice(0, 2);
+  const steps = fns.map(([sel, sig]) => {
+    const params = sig.slice(sig.indexOf("(") + 1, -1);
+    const count = params ? params.split(",").length : 0;
+    return {
+      to: target,
+      calldata: sel + (count > 0 ? word(10n ** 18n).repeat(count) : ""),
+      value: "0",
+      expect: `call ${sig}`,
+    };
+  });
   return JSON.stringify(
-    {
-      target,
-      chain_id: 1,
-      invariant_broken: "caller can withdraw more than their recorded deposit",
-      steps: [
-        { to: target, calldata: "0xb6b55f25" + word(10n ** 18n), value: "0", expect: "deposit 1 token" },
-        { to: target, calldata: "0x2e1a7d4d" + word(10n ** 24n), value: "0", expect: "withdraw 1,000,000 tokens; no balance check" },
-      ],
-    },
+    { target, chain_id: chainId, invariant_broken: "describe the invariant this path breaks", steps },
     null,
     2,
   );

@@ -13,7 +13,8 @@
     "genlayer-js": "^2.0.0-rc.1",
     "lucide-react": "^1.48.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "viem": "^2.56.8"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

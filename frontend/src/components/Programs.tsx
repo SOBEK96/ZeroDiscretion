@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bug, FileLock2, LockKeyhole, PiggyBank } from "lucide-react";
+import { BadgeCheck, Bug, FileLock2, LockKeyhole, PiggyBank } from "lucide-react";
 import { SEVERITIES, explorerAddress } from "../config";
 import type { Program, Snapshot } from "../lib/chain";
 import { dateTime, formatGen, githubBlobUrl, parseGen, policyLabel, shortAddr } from "../lib/format";
@@ -43,6 +43,14 @@ function ProgramCard({ p, payoutBps, account, onTopUp, onReport }: { p: Program;
         <ExtLink href={githubBlobUrl(p.policyUrl)} className="min-w-0 truncate font-mono">
           {policy.repo}@{policy.commit} / {policy.path}
         </ExtLink>
+      </div>
+      <div className="mt-2 glass-inset flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs">
+        <BadgeCheck size={14} className="shrink-0 text-emerald-400" />
+        <span className="text-slate-300">
+          Target ABI verified on Sourcify (chain {p.targetChainId}): {Object.keys(p.targetAbi).length} functions
+          {p.targetHasFallback ? " + fallback()" : ""}
+        </span>
+        <ExtLink href={`https://sourcify.dev/#/lookup/${p.target}`} className="text-[11px]">lookup</ExtLink>
       </div>
       <p className="mt-1.5 px-1 text-[11px] text-slate-500">
         {p.policyDigest ? <>Policy digest pinned: <span className="font-mono">{p.policyDigest.slice(0, 16)}...</span></> : "Policy digest pins on first triage"}

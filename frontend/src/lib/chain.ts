@@ -45,6 +45,10 @@ export interface Program {
   closesAt: number;
   openReports: number;
   totalPaid: bigint;
+  targetChainId: number;
+  targetAbi: Record<string, string>;
+  targetHasFallback: boolean;
+  abiCheckedAt: number;
 }
 
 export interface Report {
@@ -67,6 +71,9 @@ export interface Report {
   rebuttalType: string;
   triageReasoning: string;
   challengeReasoning: string;
+  fingerprint: string;
+  callPath: string;
+  rejectionReason: string;
 }
 
 export interface Params {
@@ -132,6 +139,10 @@ const toProgram = (r: Raw): Program => ({
   closesAt: num(r.closes_at),
   openReports: num(r.open_reports),
   totalPaid: big(r.total_paid),
+  targetChainId: num(r.target_chain_id),
+  targetAbi: Object.fromEntries(Object.entries((r.target_abi ?? {}) as Raw).map(([k, v]) => [k, str(v)])),
+  targetHasFallback: Boolean(r.target_has_fallback),
+  abiCheckedAt: num(r.abi_checked_at),
 });
 
 const toReport = (r: Raw): Report => ({
@@ -154,6 +165,9 @@ const toReport = (r: Raw): Report => ({
   rebuttalType: str(r.rebuttal_type),
   triageReasoning: str(r.triage_reasoning),
   challengeReasoning: str(r.challenge_reasoning),
+  fingerprint: str(r.fingerprint),
+  callPath: str(r.call_path),
+  rejectionReason: str(r.rejection_reason),
 });
 
 export async function fetchSnapshot(): Promise<Snapshot> {

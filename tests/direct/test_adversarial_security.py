@@ -28,14 +28,17 @@ from conftest import (
     make_rebuttal,
     mock_policy,
     mock_triage,
+    VARIANT_FUNCTIONS,
     remock,
-    word,
+    selector,
+    variant_poc,
 )
 
 
 def poc_variant(n: int) -> str:
-    """A distinct valid PoC (different withdraw amount)."""
-    return make_poc(steps=[{"to": TARGET, "calldata": WITHDRAW_SELECTOR + word(10**20 + n), "value": "0"}])
+    """A distinct valid PoC: a different target function, hence a different
+    execution path. (Changing only arguments is a duplicate by design.)"""
+    return variant_poc(n)
 
 
 def validated(chain, owner, researcher, severity="CRITICAL"):
@@ -384,7 +387,7 @@ def test_project_cannot_report_against_itself(chain, direct_bob):
         chain.submit(direct_bob, pid, "CRITICAL")
 
 
-def test_duplicate_poc_is_rejected_even_when_reformatted(chain, direct_alice, direct_bob, direct_charlie):
+def test_duplicate_vulnerability_is_rejected_even_when_reformatted(chain, direct_alice, direct_bob, direct_charlie):
     pid = chain.register(direct_bob)
     chain.submit(direct_charlie, pid, "CRITICAL")
     original = json.loads(make_poc())
@@ -392,7 +395,7 @@ def test_duplicate_poc_is_rejected_even_when_reformatted(chain, direct_alice, di
         step["calldata"] = step["calldata"].upper().replace("0X", "0x")
         step["to"] = step["to"].upper().replace("0X", "0x")
     copied = json.dumps(original, indent=4)
-    with chain.vm.expect_revert("ERR_DUPLICATE_REPORT"):
+    with chain.vm.expect_revert("ERR_DUPLICATE_VULNERABILITY"):
         chain.submit(direct_alice, pid, "CRITICAL", poc=copied)
 
 
@@ -417,6 +420,8 @@ def test_rejected_poc_may_be_resubmitted_at_correct_tier(chain, direct_vm, direc
     (make_poc(steps=[{"to": TARGET, "calldata": "0x2e1a7d4d", "value": "-1"}]), "ERR_MALFORMED_POC"),
     (make_poc(steps=[]), "ERR_MALFORMED_POC"),
     (make_poc(chain_id=0), "ERR_MALFORMED_POC"),
+    (make_poc(chain_id=137), "ERR_POC_CHAIN_MISMATCH"),
+    (make_poc(steps=[{"to": TARGET, "calldata": "0x2e1a7d4d", "route": "delegate"}]), "ERR_MALFORMED_POC"),
     (make_poc(steps=[{"to": TARGET, "calldata": "0x2e1a7d4d"}] * 17), "ERR_MALFORMED_POC"),
     ("x" * 32_001, "ERR_INPUT_TOO_LARGE"),
 ])
@@ -583,7 +588,8 @@ def test_accounting_invariant_under_mixed_multi_program_activity(chain, direct_v
     chain.assert_invariant()
 
     remock(direct_vm, rebuttal={"outcome": "UPHELD"})
-    chain.challenge(direct_alice, b, make_rebuttal(chain.c.get_report(b)["poc_hash"], steps=(0,)))
+    chain.challenge(direct_alice, b, make_rebuttal(chain.c.get_report(b)["poc_hash"], steps=(0,),
+                                                selectors=(selector(VARIANT_FUNCTIONS[9]),)))
     chain.call(direct_charlie, "top_up_vault", p1, value=3 * GEN)
     chain.assert_invariant()
 

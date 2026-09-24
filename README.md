@@ -7,13 +7,19 @@ takes that decision away from the project and gives it to GenLayer validator
 consensus:
 
 1. **Projects** lock bounty reserves in an autonomous vault. The vault is bound
-   to a `SECURITY.md` pinned to a specific GitHub commit.
+   to a `SECURITY.md` pinned to a specific GitHub commit, and to a target
+   contract with a Sourcify-verified ABI. At registration, GenVM web consensus
+   fetches that ABI and pins its selector map on-chain.
 2. **Researchers** submit bonded reports with an executable PoC trace (the
-   reproduction calldata).
-3. **Validators** fetch the pinned policy and check the PoC mechanics against a
-   deterministic on-chain disassembly. They also check the claimed severity
-   against the severity matrix, using an LLM judgement under a custom
-   equivalence validator.
+   reproduction calldata). Every call into the target must use a selector of
+   the verified ABI (`ERR_SELECTOR_NOT_FOUND_ON_TARGET` otherwise). Each report
+   is deduplicated by a semantic fingerprint of its execution path, not by
+   its text (`ERR_DUPLICATE_VULNERABILITY`).
+3. **Validators** fetch the pinned policy and judge the PoC against a
+   deterministic calldata disassembly, with signatures resolved from the
+   verified ABI, and against the program's previously validated paths. They
+   also check the claimed severity against the severity matrix, using an LLM
+   judgement under a custom equivalence validator.
 4. **Validated reports** lock their bounty and open an immutable challenge
    window. When the window ends, anyone can settle the report and the vault
    pays out. No one has to approve it.
@@ -47,6 +53,7 @@ contracts/zero_discretion.py          GenLayer intelligent contract
 tests/direct/conftest.py              harness: mocks + native-balance mirror
 tests/direct/test_bounty_lifecycle.py happy path and every settlement branch
 tests/direct/test_adversarial_security.py  attacks, reverts, invariant checks
+tests/direct/test_review_poc.py       security-review regressions: dedupe bypass, ABI gate
 scripts/deploy.py                     lint-gated deploy + verified bootstrap via genlayer-py
 specs/game_theory.md                  incentive analysis and residual risks
 deployments/studio-next.json          live deployment record
@@ -98,6 +105,18 @@ researcher then calls `withdraw` to move the funds.
 }
 ```
 
+* `chain_id` must equal the program's `target_chain_id` (`ERR_POC_CHAIN_MISMATCH`).
+* A step that calls the target must use a selector of the pinned ABI. The only
+  alternative is to declare `"route": "fallback"`, which is admitted only when
+  the verified ABI has a `fallback()` and the selector is not a known
+  function. Calls to other contracts are marked `external` and are not
+  ABI-checked.
+* **Fingerprint:** `keccak256(utf8(json.dumps([[to, selector], ...], separators=(",", ":"))))`
+  over all steps in order. Fallback entries use the symbol `fallback`.
+  `expect`, `invariant_broken`, the description and calldata arguments are
+  ignored. `get_validated_fingerprints(program_id)` lists the paths that are
+  already paid.
+
 **Rebuttal** (`rebuttal_proof`):
 
 ```json
@@ -129,8 +148,62 @@ researcher then calls `withdraw` to move the funds.
   https. The contract rejects IPs, localhost, ports, userinfo, queries and
   percent-encoding (SSRF). The policy bytes are hash-pinned on the first
   triage.
+* **One payout per execution path.** An exact fingerprint match reverts
+  before consensus. A padded variant (the same exploit plus incidental steps)
+  is judged against the list of validated paths, and a consensus duplicate
+  verdict fails it closed with the bond slashed.
+* **Verified target interface.** Only targets with a Sourcify-verified ABI can
+  register (`ERR_TARGET_NOT_VERIFIED`); proxies resolve to their
+  implementations. The selector map comes from the verified bytecode, never
+  from the project. Anyone can re-pin it after an upgrade with
+  `refresh_target_abi`.
 * **No discretion.** The governor can only lengthen windows and sweep booked
   fees. In-flight reports keep their unlock timestamp.
+
+### What "disassembly" means here
+
+GenVM performs two separate things:
+
+1. **Web-consensus ABI verification.** Validators fetch the target's verified
+   ABI from Sourcify and must agree on the exact selector-to-signature map
+   before it is pinned.
+2. **Calldata-structure disassembly.** For each step, the contract computes the
+   selector, the route, the signature resolved from the pinned ABI, the 32-byte
+   argument words and any trailing bytes. Every node computes the same result.
+
+The contract does **not** decompile target bytecode, type-decode arguments or
+execute the PoC. Reproducibility is judged by consensus, using the verified
+interface, this disassembly and the pinned policy.
+
+## Residual risks and mitigations
+
+* **Public on-chain exploit exposure.** A submitted PoC is public immediately
+  and permanently: `get_report` returns the full trace, and it stays in chain
+  history. Submission is disclosure. Targets should have a **pausable
+  emergency module** (for example `Pausable` on value-moving functions,
+  behind a fast guardian multisig) so the project can freeze the vulnerable
+  path within the challenge window. Projects can also run the program
+  against a **fork or testnet staging deployment** of the same verified
+  code, and patch production before the details matter. Payout does not
+  depend on live execution, so pausing never blocks a legitimate payout.
+* **Deduplication limits.** Two different bugs that share one call path
+  collide, and only the first is paid. Padded variants of a known exploit rely
+  on the consensus duplicate verdict.
+* **ABI source dependency.** Registration and refresh depend on Sourcify.
+  Outages revert (`ERR_TARGET_ABI_UNAVAILABLE`) and never slash.
+* **LLM judgement, mempool copying, policy availability, bond sizing.** See
+  [`specs/game_theory.md`](specs/game_theory.md) section 5.
+
+### Phase 2 roadmap: encrypted commit-reveal
+
+Researchers encrypt the PoC to the validator set's **threshold public key** and
+commit `keccak256(fingerprint, researcher, salt)` with their bond. Validators
+decrypt it jointly, with `t` of `n` key shares, inside the nondeterministic
+triage block, and publish only the verdict, the fingerprint and the severity.
+The program owner receives a privately encrypted copy so it can patch or
+pause. The plaintext PoC is revealed at the end of the challenge window. This
+removes both the public zero-day exposure and mempool copying. Open questions
+are listed in the spec (section 6).
 
 See [`specs/game_theory.md`](specs/game_theory.md) for the incentive analysis.
 
