@@ -128,15 +128,19 @@ ABI_TYPE_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789[](),")
 ROUTE_SELECTOR = "selector"
 ROUTE_FALLBACK = "fallback"
 
-# Sponsor authorization. A program sponsor is VERIFIED when either
-#  - the target's on-chain owner() equals the sponsor (read by web consensus
-#    through a public RPC for the target chain), or
-#  - the pinned SECURITY.md attests both the sponsor and the target:
+# Sponsor authorization, resolved at registration by web consensus:
+#  - OWNER_VERIFIED: the target's on-chain owner() equals the sponsor (read
+#    through a public RPC for the target chain).
+#  - POLICY_ATTESTED: the target has NO explicit owner (owner() reverts or
+#    returns zero) or its chain has no supported RPC, AND the pinned
+#    SECURITY.md attests both the sponsor and the target:
 #        ZeroDiscretion-Sponsor: 0x<sponsor address>
 #        ZeroDiscretion-Target: <chain id>:0x<target address>
-# Otherwise the program is flagged UNVERIFIED_SPONSOR: anyone can open a
-# program on a contract they do not control (third-party honeytrap), and
-# researchers must be able to see that before disclosing.
+#  - UNVERIFIED_SPONSOR: everything else. In particular, when the target HAS
+#    an owner and it is not the sponsor, no attestation can override the
+#    mismatch: anyone can host a SECURITY.md that attests themselves.
+# Anyone can open a program on a contract they do not control (third-party
+# honeytrap); researchers must be able to see that before disclosing.
 SPONSOR_OWNER_VERIFIED = "OWNER_VERIFIED"
 SPONSOR_POLICY_ATTESTED = "POLICY_ATTESTED"
 SPONSOR_UNVERIFIED = "UNVERIFIED_SPONSOR"
@@ -179,6 +183,7 @@ ERR_TARGET_ABI_UNAVAILABLE = "ERR_TARGET_ABI_UNAVAILABLE"
 ERR_POC_CHAIN_MISMATCH = "ERR_POC_CHAIN_MISMATCH"
 ERR_INVALID_CHAIN = "ERR_INVALID_CHAIN"
 ERR_NO_TARGET_CALLS = "ERR_NO_TARGET_CALLS"
+ERR_OWNER_CHECK_UNAVAILABLE = "ERR_OWNER_CHECK_UNAVAILABLE"
 ERR_MALFORMED_POC = "ERR_MALFORMED_POC"
 ERR_POC_TARGET_MISMATCH = "ERR_POC_TARGET_MISMATCH"
 ERR_INPUT_TOO_LARGE = "ERR_INPUT_TOO_LARGE"
@@ -664,6 +669,19 @@ def _policy_attests(policy_text: str, sponsor: str, chain: int, target: str) -> 
     return sponsor in sponsors and f"{chain}:{target}" in targets
 
 
+def _resolve_sponsor(owner_check: str, owner: str, attested: bool, sponsor: str) -> str:
+    """Deterministic sponsor classification. Policy attestation only speaks
+    for targets WITHOUT an explicit owner; an explicit owner that is not the
+    sponsor always yields UNVERIFIED_SPONSOR, whatever the policy says."""
+    if owner_check == OWNER_OK:
+        return SPONSOR_OWNER_VERIFIED if owner == sponsor else SPONSOR_UNVERIFIED
+    if owner_check in (OWNER_NONE, OWNER_UNSUPPORTED_CHAIN):
+        return SPONSOR_POLICY_ATTESTED if attested else SPONSOR_UNVERIFIED
+    # A failed owner lookup is not "no owner": treating it as one would let
+    # an RPC outage turn an attestation into an owner-mismatch override.
+    raise _fail(ERR_OWNER_CHECK_UNAVAILABLE, "target owner() could not be read; retry")
+
+
 def _fetch_target_owner(chain: int, target: str) -> dict:
     """owner() of the target on its own chain, via eth_call inside a nondet
     block. Failures are returned as classes, never raised."""
@@ -1099,13 +1117,8 @@ class ZeroDiscretion(gl.contract.Contract):
         result = gl.vm.run_nondet(leader_fn, validator_fn)
         if result["error"] != FETCH_OK:
             raise _fail(ERR_POLICY_UNAVAILABLE, result["error"])
-        if result["owner_check"] == OWNER_OK and result["owner"] == sponsor:
-            status = SPONSOR_OWNER_VERIFIED
-        elif result["attested"]:
-            status = SPONSOR_POLICY_ATTESTED
-        else:
-            status = SPONSOR_UNVERIFIED
-        return {"digest": result["digest"], "status": status, "owner": result["owner"]}
+        return {"digest": result["digest"], "owner": result["owner"],
+                "status": _resolve_sponsor(result["owner_check"], result["owner"], result["attested"], sponsor)}
 
     def _validated_paths(self, program_id: int) -> list:
         """Previously validated fingerprints of a program, newest first."""

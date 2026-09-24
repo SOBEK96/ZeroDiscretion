@@ -236,10 +236,15 @@ The test suite checks `exact` after every lifecycle step.
      a `sponsor_status`:
      - `OWNER_VERIFIED`: the target's `owner()` equals the registering
        address.
-     - `POLICY_ATTESTED`: the pinned policy contains both
-       `ZeroDiscretion-Sponsor: 0x<sponsor>` and
-       `ZeroDiscretion-Target: <chain>:0x<target>`.
-     - `UNVERIFIED_SPONSOR`: neither holds.
+     - `POLICY_ATTESTED`: the target has **no explicit owner** (`owner()`
+       reverts or returns zero) or its chain has no supported RPC, **and**
+       the pinned policy contains both `ZeroDiscretion-Sponsor: 0x<sponsor>`
+       and `ZeroDiscretion-Target: <chain>:0x<target>`.
+     - `UNVERIFIED_SPONSOR`: everything else. In particular, when the target
+       has an explicit owner that is not the sponsor, no attestation can
+       override the mismatch, because anyone can host a SECURITY.md that
+       attests themselves. A failed owner lookup reverts
+       (`ERR_OWNER_CHECK_UNAVAILABLE`) and is never treated as "no owner".
    * **Researcher guidance.** Submit only to programs with a verified sponsor
      badge. The frontend warns before any submission to an
      `UNVERIFIED_SPONSOR` program. Treat submitting to one as publishing a

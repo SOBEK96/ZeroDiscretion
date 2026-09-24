@@ -33,10 +33,10 @@ selectors. Consensus must then accept it.
 | | |
 |---|---|
 | Network | GenLayer Studio Next (chain `61997`, RPC `https://studio-next.genlayer.com/api`) |
-| Contract | [`0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E`](https://explorer-studio-next.genlayer.com/address/0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E) |
-| Deploy tx | [`0x2077a19b...17317f35`](https://explorer-studio-next.genlayer.com/tx/0x2077a19b1c3f526e6be4f997d0043f611b43d9839bb545284b677a0717317f35) |
+| Contract | [`0x4293932f309f4F11952e396eE99d4E195c55f7Af`](https://explorer-studio-next.genlayer.com/address/0x4293932f309f4F11952e396eE99d4E195c55f7Af) |
+| Deploy tx | [`0xf9e8d430...c4e98abd`](https://explorer-studio-next.genlayer.com/tx/0xf9e8d4300d7483567c0483da2e752e8857113f02ab8987cad46b4416c4e98abd) |
 | Governor | `0x7cc9f73979a548e00981561406117c95E5f54122` |
-| Reference program | #1: a 10 GEN testnet demo vault. Target: WETH9 on mainnet (Sourcify ABI pinned by web consensus: 11 functions + `fallback()`). Sponsor status: `POLICY_ATTESTED` (WETH9 has no `owner()`). Policy: [`SECURITY.md@436d7f2`](https://github.com/SOBEK96/ZeroDiscretion/blob/436d7f2ded4ab758601b1089f278c61c004d7702/SECURITY.md) ([register tx](https://explorer-studio-next.genlayer.com/tx/0x7037972c31a18154a012dcb5e42ae8e524b511bcc90ff9158f04444f0c41ccf4)) |
+| Reference program | #1: a 10 GEN testnet demo vault. Target: WETH9 on mainnet (Sourcify ABI pinned by web consensus: 11 functions + `fallback()`). Sponsor status: `POLICY_ATTESTED` (WETH9 has no `owner()`). Policy: [`SECURITY.md@436d7f2`](https://github.com/SOBEK96/ZeroDiscretion/blob/436d7f2ded4ab758601b1089f278c61c004d7702/SECURITY.md) ([register tx](https://explorer-studio-next.genlayer.com/tx/0xd68dd447be43fa290bd8b12699a584d7cfe181b141f0b2f9336519900abf5fba)) |
 
 This deployment includes the target-only fingerprint, the target ABI verification and the sponsor authorization. Earlier
 deployments, including `0xcd8cd3E7...5841` where both consensus paths were exercised end to end, are kept under `superseded` in
@@ -204,8 +204,13 @@ interface, this disassembly and the pinned policy.
     ZeroDiscretion-Target: <chain id>:0x<target address>
     ```
 
-    This gives `POLICY_ATTESTED`. It proves control of the policy repository
-    only, so check that the repository is the project's official one.
+    This gives `POLICY_ATTESTED`, but **only for targets without an explicit
+    owner** (`owner()` reverts or returns zero, or the chain has no supported
+    RPC). If the target has an owner and it is not the sponsor, the program is
+    `UNVERIFIED_SPONSOR` whatever the policy attests. A failed owner lookup
+    reverts (`ERR_OWNER_CHECK_UNAVAILABLE`) and never counts as "no owner".
+    An attestation proves control of the policy repository only, so check
+    that the repository is the project's official one.
   * **On-chain `owner()` check** by web consensus against a public RPC for the
     target chain (1, 10, 137, 8453, 42161, 11155111). The result is
     `OWNER_VERIFIED` when the owner is the sponsor. This is a snapshot taken

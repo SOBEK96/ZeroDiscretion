@@ -293,6 +293,7 @@ def test_finding2_invalid_chain_id_is_rejected(chain, direct_bob):
 
 def test_poc_must_target_the_programs_chain(chain, direct_vm, direct_bob, direct_charlie):
     mock_sourcify(direct_vm, chain=137)
+    mock_owner(direct_vm, chain_rpc=r"polygon-bor-rpc\.publicnode\.com")
     pid = chain.register(direct_bob, chain=137)
     assert chain.c.get_program(pid)["target_chain_id"] == 137
     with chain.vm.expect_revert("ERR_POC_CHAIN_MISMATCH"):
@@ -481,3 +482,44 @@ def test_sponsor_consensus_validator_rejects_forged_attestation(chain, direct_vm
     assert direct_vm.run_validator(leader_result=forged) is False
     forged = dict(direct_vm._captured_validators[-1][0], owner_check="OK", owner=chain.key(direct_bob))
     assert direct_vm.run_validator(leader_result=forged) is False
+
+
+def test_sponsor_resolution_explicit_owner_mismatch_blocks_attestation(chain, direct_vm, direct_bob):
+    """An attacker hosts a SECURITY.md that attests themselves for a target
+    that HAS an explicit owner. The owner mismatch must win: the program is
+    UNVERIFIED_SPONSOR, never POLICY_ATTESTED."""
+    owner = "0x1111111111111111111111111111111111111111"
+    caller = type(direct_bob)("0x2222222222222222222222222222222222222222")
+    remock(direct_vm, owner=owner, policy={"text": attested_policy("0x2222222222222222222222222222222222222222")})
+    pid = chain.register(caller)
+    program = chain.c.get_program(pid)
+    assert program["sponsor_status"] == "UNVERIFIED_SPONSOR"
+    assert program["sponsor_status"] != "POLICY_ATTESTED"
+    assert program["target_owner"] == owner
+    chain.assert_invariant()
+
+
+def test_attestation_counts_only_without_an_explicit_owner(chain, direct_vm, direct_bob):
+    bob = chain.key(direct_bob)
+    # owner() reverts / returns empty: attestation applies.
+    remock(direct_vm, owner=None, policy={"text": attested_policy(bob)})
+    assert chain.c.get_program(chain.register(direct_bob))["sponsor_status"] == "POLICY_ATTESTED"
+    # Chain without a supported RPC (56): attestation applies.
+    remock(direct_vm, sourcify={"chain": 56}, policy={"text": attested_policy(bob, chain=56)})
+    assert chain.c.get_program(chain.register(direct_bob, chain=56))["sponsor_status"] == "POLICY_ATTESTED"
+    # Explicit owner equal to the sponsor: owner-verified, attestation irrelevant.
+    remock(direct_vm, owner=bob, policy={"text": attested_policy(bob)})
+    assert chain.c.get_program(chain.register(direct_bob))["sponsor_status"] == "OWNER_VERIFIED"
+
+
+def test_failed_owner_lookup_reverts_instead_of_trusting_attestation(chain, direct_vm, direct_bob):
+    remock(direct_vm, policy={"text": attested_policy(chain.key(direct_bob))})
+    direct_vm.clear_mocks()
+    mock_sourcify(direct_vm)
+    mock_policy(direct_vm, text=attested_policy(chain.key(direct_bob)))
+    direct_vm.mock_web(r"ethereum-rpc\.publicnode\.com", {"method": "POST", "status": 503, "body": "busy"})
+    with chain.vm.expect_revert("ERR_OWNER_CHECK_UNAVAILABLE"):
+        chain.register(direct_bob)
+    assert chain.c.get_protocol_params()["next_program_id"] == 1
+    assert chain.c.get_accounting()["total_inflows"] == 0
+    chain.assert_invariant()

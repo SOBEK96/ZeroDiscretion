@@ -11,9 +11,9 @@ export const NETWORK = {
 } as const;
 
 export const CONTRACT_ADDRESS = ((import.meta.env.VITE_CONTRACT_ADDRESS as string | undefined) ??
-  "0xc5F8a1756525a717CC9b219A98Ac2fc4Ed271F0E") as `0x${string}`;
+  "0x4293932f309f4F11952e396eE99d4E195c55f7Af") as `0x${string}`;
 
-export const DEPLOY_TX_HASH = "0x2077a19b1c3f526e6be4f997d0043f611b43d9839bb545284b677a0717317f35";
+export const DEPLOY_TX_HASH = "0xf9e8d4300d7483567c0483da2e752e8857113f02ab8987cad46b4416c4e98abd";
 
 export const REPO_URL = "https://github.com/SOBEK96/ZeroDiscretion";
 
