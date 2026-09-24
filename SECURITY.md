@@ -55,6 +55,16 @@ available reserves (CRITICAL 50%, HIGH 20%, MEDIUM 7.5%, LOW 2%), after the
 challenge window. No manual approval is involved. Each execution path is
 rewarded once: duplicates are rejected by semantic fingerprint.
 
+## ZeroDiscretion sponsor attestation
+
+The reference program's sponsor attests the registration below. This proves
+that the sponsor controls this repository. It does not make the sponsor the
+target's owner: WETH9 has no owner, so the program is `POLICY_ATTESTED`, not
+`OWNER_VERIFIED`.
+
+ZeroDiscretion-Sponsor: 0x7cc9f73979a548e00981561406117c95E5f54122
+ZeroDiscretion-Target: 1:0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+
 ## Reporting vulnerabilities in ZeroDiscretion itself
 
 To report a vulnerability in the ZeroDiscretion contract or frontend, open a

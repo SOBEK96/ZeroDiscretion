@@ -210,6 +210,7 @@ def main() -> int:
             raise SystemExit(f"registered program has no pinned target ABI: {program}")
         print(f"  target ABI pinned by web consensus: {len(program['target_abi'])} functions, "
               f"fallback={program['target_has_fallback']}")
+        print(f"  sponsor status: {program['sponsor_status']} (target owner: {program['target_owner'] or 'none'})")
         solvency = read("get_solvency")
         record["protocol_params"] = after
         record["bootstrap_program"] = {
@@ -220,6 +221,8 @@ def main() -> int:
             "target_abi_source": "sourcify",
             "target_abi": program["target_abi"],
             "target_has_fallback": program["target_has_fallback"],
+            "sponsor_status": program["sponsor_status"],
+            "target_owner": program["target_owner"],
             "policy_url": policy_url,
             "policy_raw_url": raw_url,
             "policy_commit": commit,

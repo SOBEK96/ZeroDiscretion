@@ -49,6 +49,8 @@ export interface Program {
   targetAbi: Record<string, string>;
   targetHasFallback: boolean;
   abiCheckedAt: number;
+  sponsorStatus: string;
+  targetOwner: string;
 }
 
 export interface Report {
@@ -143,6 +145,8 @@ const toProgram = (r: Raw): Program => ({
   targetAbi: Object.fromEntries(Object.entries((r.target_abi ?? {}) as Raw).map(([k, v]) => [k, str(v)])),
   targetHasFallback: Boolean(r.target_has_fallback),
   abiCheckedAt: num(r.abi_checked_at),
+  sponsorStatus: str(r.sponsor_status),
+  targetOwner: str(r.target_owner),
 });
 
 const toReport = (r: Raw): Report => ({

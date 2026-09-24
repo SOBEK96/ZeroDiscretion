@@ -129,7 +129,7 @@ export function parsePoc(trace: string, programTarget: string, programChain: num
     if (to === target) hitsTarget = true;
     steps.push({ to, calldata: cd, value: BigInt(value).toString(), expect, route });
   }
-  if (!hitsTarget) return fail("ERR_POC_TARGET_MISMATCH", "no step calls the program target");
+  if (!hitsTarget) return fail("ERR_NO_TARGET_CALLS", "no step calls the program target");
 
   const normalized = { target, chain_id: chainId, invariant_broken: inv.trim(), steps };
   return { ok: true, canonical: pyCanonicalJson(normalized), steps, chainId, invariant: inv.trim() };
@@ -180,10 +180,12 @@ export function checkTargetSelectors(
   return null;
 }
 
-// Mirrors _fingerprint: keccak256 over the ordered (address, selector) path;
-// fallback entries collapse to the symbol "fallback".
-export function fingerprint(steps: PocStep[]): string {
-  const pairs = steps.map((s) => [s.to, s.route === "fallback" ? "fallback" : s.calldata.slice(0, 10)]);
+// Mirrors _fingerprint: keccak256 over the ordered (target, selector) pairs of
+// the steps that call the program TARGET; other contracts' calls are excluded
+// and fallback entries collapse to the symbol "fallback".
+export function fingerprint(steps: PocStep[], target: string): string {
+  const t = target.toLowerCase();
+  const pairs = steps.filter((s) => s.to === t).map((s) => [s.to, s.route === "fallback" ? "fallback" : s.calldata.slice(0, 10)]);
   return keccak256(stringToBytes(JSON.stringify(pairs))).slice(2);
 }
 

@@ -107,10 +107,12 @@ researcher then calls `withdraw` to move the funds.
   the verified ABI has a `fallback()` and the selector is not a known
   function. Calls to other contracts are marked `external` and are not
   ABI-checked.
-* **Fingerprint:** `keccak256(utf8(json.dumps([[to, selector], ...], separators=(",", ":"))))`
-  over all steps in order. Fallback entries use the symbol `fallback`.
-  `expect`, `invariant_broken`, the description and calldata arguments are
-  ignored. `get_validated_fingerprints(program_id)` lists the paths that are
+* **Fingerprint (target-only):** `keccak256(utf8(json.dumps([[target, selector], ...], separators=(",", ":"))))`
+  over the steps that call the program target, in order. Fallback entries use
+  the symbol `fallback`. Steps to other contracts, `expect`,
+  `invariant_broken`, the description and calldata arguments are all
+  ignored, so non-target padding cannot change the fingerprint. A PoC with
+  no target call reverts with `ERR_NO_TARGET_CALLS`. `get_validated_fingerprints(program_id)` lists the paths that are
   already paid.
 
 **Rebuttal** (`rebuttal_proof`):
@@ -145,9 +147,14 @@ researcher then calls `withdraw` to move the funds.
   percent-encoding (SSRF). The policy bytes are hash-pinned on the first
   triage.
 * **One payout per execution path.** An exact fingerprint match reverts
-  before consensus. A padded variant (the same exploit plus incidental steps)
-  is judged against the list of validated paths, and a consensus duplicate
-  verdict fails it closed with the bond slashed.
+  before consensus, including copies padded with calls to other contracts. A
+  variant padded with extra calls into the target is judged against the list
+  of validated paths, and a consensus duplicate verdict fails it closed with
+  the bond slashed.
+* **Sponsor authorization.** At registration, web consensus reads the target's
+  on-chain `owner()` and the pinned `SECURITY.md`. The program is flagged
+  `OWNER_VERIFIED`, `POLICY_ATTESTED` or `UNVERIFIED_SPONSOR` (see below).
+  The policy digest is also pinned at registration.
 * **Verified target interface.** Only targets with a Sourcify-verified ABI can
   register (`ERR_TARGET_NOT_VERIFIED`); proxies resolve to their
   implementations. The selector map comes from the verified bytecode, never
@@ -182,9 +189,32 @@ interface, this disassembly and the pinned policy.
   against a **fork or testnet staging deployment** of the same verified
   code, and patch production before the details matter. Payout does not
   depend on live execution, so pausing never blocks a legitimate payout.
-* **Deduplication limits.** Two different bugs that share one call path
-  collide, and only the first is paid. Padded variants of a known exploit rely
-  on the consensus duplicate verdict.
+* **Deduplication limits.** Two different bugs that make the same sequence of
+  target calls collide, and only the first is paid. Variants padded with
+  extra target calls rely on the consensus duplicate verdict.
+* **Unsolicited programs and 0-day interception (third-party honeytrap).**
+  Registration is permissionless, so a malicious third party can sponsor a
+  cheap bounty on a contract it does not control, such as an ownerless or
+  third-party protocol. It collects the publicly disclosed PoCs and runs
+  them against the real contract before its team is aware. Mitigations:
+  * **Sponsor attestation in the pinned SECURITY.md:**
+
+    ```
+    ZeroDiscretion-Sponsor: 0x<sponsor address>
+    ZeroDiscretion-Target: <chain id>:0x<target address>
+    ```
+
+    This gives `POLICY_ATTESTED`. It proves control of the policy repository
+    only, so check that the repository is the project's official one.
+  * **On-chain `owner()` check** by web consensus against a public RPC for the
+    target chain (1, 10, 137, 8453, 42161, 11155111). The result is
+    `OWNER_VERIFIED` when the owner is the sponsor. This is a snapshot taken
+    at registration, and ownerless targets cannot pass it.
+  * **Researchers should submit only to programs with a verified sponsor
+    badge.** The dApp warns before any submission to an `UNVERIFIED_SPONSOR`
+    program. The flag informs researchers but does not gate registration:
+    requiring owner consent would bring back the project veto for ownerless
+    code.
 * **ABI source dependency.** Registration and refresh depend on Sourcify.
   Outages revert (`ERR_TARGET_ABI_UNAVAILABLE`) and never slash.
 * **LLM judgement, mempool copying, policy availability, bond sizing.** See

@@ -127,6 +127,33 @@ ABI_TYPE_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789[](),")
 # known function.
 ROUTE_SELECTOR = "selector"
 ROUTE_FALLBACK = "fallback"
+
+# Sponsor authorization. A program sponsor is VERIFIED when either
+#  - the target's on-chain owner() equals the sponsor (read by web consensus
+#    through a public RPC for the target chain), or
+#  - the pinned SECURITY.md attests both the sponsor and the target:
+#        ZeroDiscretion-Sponsor: 0x<sponsor address>
+#        ZeroDiscretion-Target: <chain id>:0x<target address>
+# Otherwise the program is flagged UNVERIFIED_SPONSOR: anyone can open a
+# program on a contract they do not control (third-party honeytrap), and
+# researchers must be able to see that before disclosing.
+SPONSOR_OWNER_VERIFIED = "OWNER_VERIFIED"
+SPONSOR_POLICY_ATTESTED = "POLICY_ATTESTED"
+SPONSOR_UNVERIFIED = "UNVERIFIED_SPONSOR"
+ATTEST_SPONSOR_KEY = "zerodiscretion-sponsor:"
+ATTEST_TARGET_KEY = "zerodiscretion-target:"
+OWNER_SELECTOR = "0x8da5cb5b"  # owner()
+CHAIN_RPC = {
+    1: "https://ethereum-rpc.publicnode.com",
+    10: "https://optimism-rpc.publicnode.com",
+    137: "https://polygon-bor-rpc.publicnode.com",
+    8453: "https://base-rpc.publicnode.com",
+    42161: "https://arbitrum-one-rpc.publicnode.com",
+    11155111: "https://ethereum-sepolia-rpc.publicnode.com",
+}
+OWNER_OK = "OK"
+OWNER_NONE = "NO_OWNER"
+OWNER_UNSUPPORTED_CHAIN = "UNSUPPORTED_CHAIN"
 SEGMENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 HEX_CHARS = set("0123456789abcdef")
 
@@ -151,6 +178,7 @@ ERR_TARGET_NOT_VERIFIED = "ERR_TARGET_NOT_VERIFIED"
 ERR_TARGET_ABI_UNAVAILABLE = "ERR_TARGET_ABI_UNAVAILABLE"
 ERR_POC_CHAIN_MISMATCH = "ERR_POC_CHAIN_MISMATCH"
 ERR_INVALID_CHAIN = "ERR_INVALID_CHAIN"
+ERR_NO_TARGET_CALLS = "ERR_NO_TARGET_CALLS"
 ERR_MALFORMED_POC = "ERR_MALFORMED_POC"
 ERR_POC_TARGET_MISMATCH = "ERR_POC_TARGET_MISMATCH"
 ERR_INPUT_TOO_LARGE = "ERR_INPUT_TOO_LARGE"
@@ -402,7 +430,7 @@ def _parse_poc(poc_trace: str, target: str, chain: int) -> tuple:
         steps.append({"to": to, "calldata": calldata, "value": str(int(value)), "expect": expect, "route": route})
 
     if not hits_target:
-        raise _fail(ERR_POC_TARGET_MISMATCH, "no step calls the program target")
+        raise _fail(ERR_NO_TARGET_CALLS, "no step calls the program target")
 
     normalized = {
         "target": poc_target,
@@ -469,21 +497,31 @@ def _check_target_selectors(steps: list, target: str, abi_map: dict, has_fallbac
             raise _fail(ERR_SELECTOR_NOT_FOUND_ON_TARGET, f"step {i}: {selector} is not a function of the verified target ABI")
 
 
-def _call_path_pairs(steps: list) -> list:
-    # Fallback entries collapse to one symbol: the 4 selector bytes of a
-    # fallback call are arbitrary and must not be a way to mint new paths.
-    return [[s["to"], ROUTE_FALLBACK if s["route"] == ROUTE_FALLBACK else s["calldata"][:10]] for s in steps]
+def _target_path_pairs(steps: list, target: str) -> list:
+    # Only calls INTO the program target count. Fallback entries collapse to
+    # one symbol: their 4 selector bytes are arbitrary and must not be a way
+    # to mint new paths.
+    return [
+        [s["to"], ROUTE_FALLBACK if s["route"] == ROUTE_FALLBACK else s["calldata"][:10]]
+        for s in steps
+        if s["to"] == target
+    ]
 
 
-def _fingerprint(steps: list) -> str:
-    """Semantic fingerprint of a PoC: keccak256 over the ordered execution
-    path of (lowercase address, 4-byte selector) pairs. Free text (expect,
-    invariant_broken, description) and calldata arguments are ignored, so
-    rewording a report or changing an amount does not create a new finding.
+def _fingerprint(steps: list, target: str) -> str:
+    """Semantic fingerprint of a PoC: keccak256 over the ordered sequence of
+    (target address, 4-byte selector) pairs of the steps that call the
+    program TARGET. Steps to any other address (token approvals, balance
+    reads, attacker helpers) are excluded, so padding them in or out cannot
+    change the fingerprint. Free text (expect, invariant_broken, description)
+    and calldata arguments are ignored as well.
 
-      keccak256(utf8(json.dumps([[to, selector], ...], separators=(",", ":"))))
+      keccak256(utf8(json.dumps([[target, selector], ...], separators=(",", ":"))))
     """
-    encoded = json.dumps(_call_path_pairs(steps), separators=(",", ":"))
+    pairs = _target_path_pairs(steps, target)
+    if len(pairs) == 0:
+        raise _fail(ERR_NO_TARGET_CALLS, "no step calls the program target")
+    encoded = json.dumps(pairs, separators=(",", ":"))
     return gl.Keccak256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -609,6 +647,51 @@ def _fetch_target_abi(chain: int, address: str) -> dict:
     if len(functions) == 0 or len(functions) > MAX_ABI_FUNCTIONS:
         return failed(FETCH_EXTERNAL)
     return {"error": FETCH_OK, "functions": {k: functions[k] for k in sorted(functions)}, "fallback": has_fallback}
+
+
+def _policy_attests(policy_text: str, sponsor: str, chain: int, target: str) -> bool:
+    """True when the pinned policy names BOTH this sponsor and this target:
+    ZeroDiscretion-Sponsor: 0x<sponsor> / ZeroDiscretion-Target: <chain>:0x<target>
+    (keys case-insensitive, one attestation per line)."""
+    sponsors = set()
+    targets = set()
+    for line in policy_text.splitlines():
+        low = line.strip().strip("`*-> ").lower()
+        if low.startswith(ATTEST_SPONSOR_KEY):
+            sponsors.add(_normalize_address(low[len(ATTEST_SPONSOR_KEY):].strip().strip("`")))
+        elif low.startswith(ATTEST_TARGET_KEY):
+            targets.add(low[len(ATTEST_TARGET_KEY):].strip().strip("`"))
+    return sponsor in sponsors and f"{chain}:{target}" in targets
+
+
+def _fetch_target_owner(chain: int, target: str) -> dict:
+    """owner() of the target on its own chain, via eth_call inside a nondet
+    block. Failures are returned as classes, never raised."""
+    rpc = CHAIN_RPC.get(chain)
+    if rpc is None:
+        return {"owner_check": OWNER_UNSUPPORTED_CHAIN, "owner": ""}
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                          "params": [{"to": target, "data": OWNER_SELECTOR}, "latest"]})
+    try:
+        res = gl.nondet.web.post(rpc, body=payload, headers={"Content-Type": "application/json"})
+    except Exception:
+        return {"owner_check": FETCH_TRANSIENT, "owner": ""}
+    status = getattr(res, "status", None)
+    if not (isinstance(status, int) and 200 <= status < 300):
+        return {"owner_check": FETCH_TRANSIENT, "owner": ""}
+    try:
+        body = res.body
+        data = json.loads(body.decode("utf-8") if isinstance(body, (bytes, bytearray)) else str(body))
+    except Exception:
+        return {"owner_check": FETCH_TRANSIENT, "owner": ""}
+    result = data.get("result") if isinstance(data, dict) else None
+    # A revert (no owner() function) arrives as an RPC error or empty result.
+    if not isinstance(result, str) or len(result) != 66 or not _is_hex(result[2:].lower()):
+        return {"owner_check": OWNER_NONE, "owner": ""}
+    owner = "0x" + result[-40:].lower()
+    if owner == "0x" + "0" * 40:
+        return {"owner_check": OWNER_NONE, "owner": ""}
+    return {"owner_check": OWNER_OK, "owner": owner}
 
 
 def _parse_rebuttal(rebuttal_proof: str, poc_hash: str, disasm: list) -> dict:
@@ -870,6 +953,8 @@ class Program:
     target_abi: str          # JSON {selector: signature} from the verified ABI
     target_has_fallback: bool
     abi_checked_at: u256
+    sponsor_status: str      # OWNER_VERIFIED | POLICY_ATTESTED | UNVERIFIED_SPONSOR
+    target_owner: str        # owner() observed at registration, "" if none
 
 
 @allow_storage
@@ -993,6 +1078,35 @@ class ZeroDiscretion(gl.contract.Contract):
             raise _fail(ERR_TARGET_NOT_VERIFIED, "target has no verified ABI on Sourcify for this chain")
         return result
 
+    def _verify_sponsor(self, raw_url: str, chain: int, target: str, sponsor: str) -> dict:
+        """Web consensus at registration: fetch the pinned policy (pinning
+        its digest) and the target's on-chain owner(), then classify the
+        sponsor deterministically. Validators must agree exactly."""
+        def leader_fn():
+            fetched = _fetch_policy(raw_url, "")
+            if fetched["error"] != FETCH_OK:
+                return {"error": fetched["error"], "digest": "", "attested": False, "owner_check": "", "owner": ""}
+            owner = _fetch_target_owner(chain, target)
+            return {"error": FETCH_OK, "digest": fetched["digest"],
+                    "attested": _policy_attests(fetched["text"], sponsor, chain, target),
+                    "owner_check": owner["owner_check"], "owner": owner["owner"]}
+
+        def validator_fn(leaders_res) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return False
+            return leaders_res.calldata == leader_fn()
+
+        result = gl.vm.run_nondet(leader_fn, validator_fn)
+        if result["error"] != FETCH_OK:
+            raise _fail(ERR_POLICY_UNAVAILABLE, result["error"])
+        if result["owner_check"] == OWNER_OK and result["owner"] == sponsor:
+            status = SPONSOR_OWNER_VERIFIED
+        elif result["attested"]:
+            status = SPONSOR_POLICY_ATTESTED
+        else:
+            status = SPONSOR_UNVERIFIED
+        return {"digest": result["digest"], "status": status, "owner": result["owner"]}
+
     def _validated_paths(self, program_id: int) -> list:
         """Previously validated fingerprints of a program, newest first."""
         key = str(int(program_id))
@@ -1027,6 +1141,7 @@ class ZeroDiscretion(gl.contract.Contract):
         _check_severity(min_severity)
 
         abi = self._resolve_target_abi(int(target_chain_id), target)
+        sponsor = self._verify_sponsor(raw_url, int(target_chain_id), target, _key(gl.message.sender_address))
 
         deposit = self._receive()
         program_id = int(self.next_program_id)
@@ -1035,7 +1150,7 @@ class ZeroDiscretion(gl.contract.Contract):
             owner=gl.message.sender_address,
             target_address=target,
             policy_url=raw_url,
-            policy_digest="",
+            policy_digest=sponsor["digest"],
             min_severity=min_severity,
             available=u256(deposit),
             locked=u256(0),
@@ -1048,6 +1163,8 @@ class ZeroDiscretion(gl.contract.Contract):
             target_abi=json.dumps(abi["functions"], sort_keys=True, separators=(",", ":")),
             target_has_fallback=bool(abi["fallback"]),
             abi_checked_at=u256(_now()),
+            sponsor_status=sponsor["status"],
+            target_owner=sponsor["owner"],
         )
         self.total_vault_reserves += deposit
         self._enforce_invariant()
@@ -1113,7 +1230,7 @@ class ZeroDiscretion(gl.contract.Contract):
         # Exact trace hash: binds rebuttals to these bytes. Semantic
         # fingerprint: deduplicates the vulnerability itself.
         poc_hash = _sha256_hex(canonical)
-        fingerprint = _fingerprint(steps)
+        fingerprint = _fingerprint(steps, p.target_address)
         pid_key = str(int(program_id))
         if pid_key in self.seen_fingerprints and fingerprint in self.seen_fingerprints[pid_key]:
             prior = int(self.seen_fingerprints[pid_key][fingerprint])
@@ -1551,6 +1668,8 @@ class ZeroDiscretion(gl.contract.Contract):
             "target_has_fallback": bool(p.target_has_fallback),
             "abi_source": "sourcify",
             "abi_checked_at": int(p.abi_checked_at),
+            "sponsor_status": p.sponsor_status,
+            "target_owner": p.target_owner,
         }
 
     @gl.public.view

@@ -49,7 +49,7 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
     () => (poc?.ok && poc.steps && program ? checkTargetSelectors(poc.steps, program.target, program.targetAbi, program.targetHasFallback) : null),
     [poc, program],
   );
-  const fp = useMemo(() => (poc?.ok && poc.steps ? fingerprint(poc.steps) : ""), [poc]);
+  const fp = useMemo(() => (poc?.ok && poc.steps && program ? fingerprint(poc.steps, program.target) : ""), [poc, program]);
   const path = useMemo(() => (poc?.ok && poc.steps && program ? callPath(poc.steps, program.target, program.targetAbi) : ""), [poc, program]);
   const validatedPaths = useMemo(
     () => (snapshot?.reports ?? []).filter((r) => r.programId === program?.id && r.status !== "REJECTED" && r.fingerprint),
@@ -217,6 +217,17 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
             </dl>
           </div>
 
+          {program?.sponsorStatus === "UNVERIFIED_SPONSOR" && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-100">
+              <CircleAlert size={15} className="mt-0.5 shrink-0" />
+              <span>
+                <strong>Unverified sponsor.</strong> Nothing shows that this program's sponsor controls the target: its owner() does not
+                match, and the pinned policy has no sponsor attestation. Your PoC becomes public on submission, so an unsolicited
+                sponsor could use it against the real contract. Submit only if you accept that risk.
+              </span>
+            </div>
+          )}
+
           <button type="submit" className="btn-3d w-full !py-3" disabled={!account || !allOk || busy}>
             <Send size={16} />
             {!account ? "Connect wallet to submit" : busy ? "Awaiting consensus..." : `Sign & submit with ${formatGen(bond ?? 0n)} GEN bond`}
@@ -253,7 +264,7 @@ export function SubmitForm({ snapshot, account, programId, setProgramId, onSubmi
           {fp && (
             <div className="mt-4 space-y-2">
               <div>
-                <p className="label">Semantic fingerprint (keccak256 of execution path)</p>
+                <p className="label">Semantic fingerprint (keccak256 of target-call path)</p>
                 <p className="break-all rounded-lg bg-slate-950/70 px-2 py-1.5 font-mono text-[11px] text-emerald-200">{fp}</p>
               </div>
               <div>

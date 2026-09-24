@@ -45,16 +45,19 @@ the challenge bond and `f = 2.5%` the protocol fee.
   recipient, the project gains nothing when a researcher fails.
 * **One payout per vulnerability.** Deduplication works on a semantic
   fingerprint of the execution path, not on the report text:
-  `keccak256` over the ordered `(lowercase address, 4-byte selector)` pairs of
-  all steps. Free text (`expect`, `invariant_broken`, the description) and
+  `keccak256` over the ordered `(target address, 4-byte selector)` pairs of
+  the steps that call the program target. Steps to any other address are
+  excluded (`ERR_NO_TARGET_CALLS` if nothing calls the target). Free text (`expect`, `invariant_broken`, the description) and
   calldata arguments are ignored, so rewording a validated finding or changing
   an amount reverts with `ERR_DUPLICATE_VULNERABILITY` before any bond is
   taken. (An earlier version hashed the whole PoC including free text, so one
   changed word earned a second payout. The regression tests in
-  `tests/direct/test_review_poc.py` reproduce that attack.) A padded variant,
-  meaning the same exploit plus incidental steps such as an extra `balanceOf`,
-  changes the fingerprint. For that case, every validated path of the program
-  goes into the triage context. A consensus "duplicate of prior" verdict fails
+  `tests/direct/test_review_poc.py` reproduce that attack.) Padding with
+  calls to other contracts (token approvals, `balanceOf` on a dummy address,
+  helper contracts) therefore cannot change the fingerprint, and it is
+  rejected deterministically. Padding with extra calls into the target itself,
+  such as an incidental view, does change the fingerprint. For that case,
+  every validated path of the program goes into the triage context. A consensus "duplicate of prior" verdict fails
   the report closed and slashes the bond like any other rejection. Validated
   paths are public (`get_validated_fingerprints`), so an honest researcher can
   check before bonding. A rejected PoC never blocks its path and can be
@@ -194,11 +197,12 @@ The test suite checks `exact` after every lifecycle step.
 
    For researchers: submission is disclosure. Weigh this before filing against
    a target without an emergency pause.
-2. **Deduplication limits.** The path fingerprint is exact by design. Two
-   different root causes that use the same call path collide, and only the
-   first is paid. A padded variant of a known exploit passes the deterministic
-   gate and relies on the consensus duplicate verdict, which can be wrong in
-   either direction. Validated paths are public so researchers can check
+2. **Deduplication limits.** The target-only path fingerprint is exact by
+   design. Two different root causes that use the same sequence of target
+   calls collide, and only the first is paid, even when their helper calls
+   differ. Padding with extra calls into the target itself passes the
+   deterministic gate and relies on the consensus duplicate verdict, which
+   can be wrong in either direction. Validated paths are public so researchers can check
    before bonding.
 3. **ABI source dependency.** Registration and `refresh_target_abi` depend on
    Sourcify availability. Outages revert (`ERR_TARGET_ABI_UNAVAILABLE`) and
@@ -218,6 +222,39 @@ The test suite checks `exact` after every lifecycle step.
 7. **Economic sizing.** The fixed 1 GEN and 2 GEN bonds are small against
    large vaults. Future versions should scale bonds with the tier and the vault
    size.
+
+8. **Unsolicited programs and 0-day interception (third-party honeytrap).**
+   Registration is permissionless, so anyone can open a program on a contract
+   they do not control, for example a large ownerless or third-party
+   protocol, and fund it just enough to attract submissions. Every PoC is
+   public on submission (risk 1). The "sponsor" can then run the disclosed
+   exploit against the real contract before its team knows about it, and the
+   researcher's work turns into an attack. Mitigations:
+   * **Sponsor authorization, checked at registration by web consensus.**
+     Validators fetch the pinned SECURITY.md and read the target's on-chain
+     `owner()` through a public RPC for the target chain. The program records
+     a `sponsor_status`:
+     - `OWNER_VERIFIED`: the target's `owner()` equals the registering
+       address.
+     - `POLICY_ATTESTED`: the pinned policy contains both
+       `ZeroDiscretion-Sponsor: 0x<sponsor>` and
+       `ZeroDiscretion-Target: <chain>:0x<target>`.
+     - `UNVERIFIED_SPONSOR`: neither holds.
+   * **Researcher guidance.** Submit only to programs with a verified sponsor
+     badge. The frontend warns before any submission to an
+     `UNVERIFIED_SPONSOR` program. Treat submitting to one as publishing a
+     0-day.
+   * **Limits, stated plainly.** `POLICY_ATTESTED` proves only that the sponsor
+     controls the repository the policy lives in, not that this repository
+     speaks for the target. Researchers must still check that it is the
+     project's official repository. `OWNER_VERIFIED` is the strong signal,
+     but it covers only targets with an `owner()` on a supported chain, and
+     it is a snapshot taken at registration. Ownerless targets (such as
+     WETH9) can never be owner-verified. Registration stays permissionless on
+     purpose, because requiring owner consent would reintroduce the project
+     veto for ownerless code. The flag informs the researcher; it does not
+     gate them. Phase 2 encryption (section 6) removes the interception
+     window entirely.
 
 ## 6. Phase 2 roadmap: encrypted commit-reveal
 

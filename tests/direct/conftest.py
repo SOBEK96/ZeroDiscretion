@@ -174,9 +174,26 @@ def mock_rebuttal(vm, bound=True, outcome="DISMISSED", revised="NONE",
     }))
 
 
-def remock(vm, *, policy=None, triage=None, rebuttal=None, sourcify=None) -> None:
+def attested_policy(sponsor: str, target: str = TARGET, chain: int = 1) -> str:
+    """POLICY_TEXT plus the sponsor attestation block."""
+    return POLICY_TEXT + f"""
+## ZeroDiscretion sponsor attestation
+ZeroDiscretion-Sponsor: {sponsor}
+ZeroDiscretion-Target: {chain}:{target}
+"""
+
+
+def mock_owner(vm, owner: str | None = None, chain_rpc: str = r"ethereum-rpc\.publicnode\.com") -> None:
+    """eth_call owner() on the target chain; None = no owner() (empty result)."""
+    result = "0x" + "0" * 24 + owner[2:].lower() if owner else "0x"
+    vm.mock_web(chain_rpc, {"method": "POST", "status": 200,
+                            "body": json.dumps({"jsonrpc": "2.0", "id": 1, "result": result})})
+
+
+def remock(vm, *, policy=None, triage=None, rebuttal=None, sourcify=None, owner=None) -> None:
     """Reset every mock and install fresh ones (first registered match wins)."""
     vm.clear_mocks()
+    mock_owner(vm, owner)
     mock_sourcify(vm, **(sourcify or {}))
     mock_policy(vm, **(policy or {}))
     mock_triage(vm, **(triage or {}))

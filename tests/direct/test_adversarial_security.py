@@ -413,7 +413,7 @@ def test_rejected_poc_may_be_resubmitted_at_correct_tier(chain, direct_vm, direc
     ("not json", "ERR_MALFORMED_POC"),
     ("[]", "ERR_MALFORMED_POC"),
     (make_poc(target=TOKEN), "ERR_POC_TARGET_MISMATCH"),
-    (make_poc(steps=[{"to": TOKEN, "calldata": "0x095ea7b3", "value": "0"}]), "ERR_POC_TARGET_MISMATCH"),
+    (make_poc(steps=[{"to": TOKEN, "calldata": "0x095ea7b3", "value": "0"}]), "ERR_NO_TARGET_CALLS"),
     (make_poc(steps=[{"to": TARGET, "calldata": "0x2e1a", "value": "0"}]), "ERR_MALFORMED_POC"),
     (make_poc(steps=[{"to": TARGET, "calldata": "0x2e1a7d4d0", "value": "0"}]), "ERR_MALFORMED_POC"),
     (make_poc(steps=[{"to": TARGET, "calldata": "2e1a7d4d", "value": "0"}]), "ERR_MALFORMED_POC"),

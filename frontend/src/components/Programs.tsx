@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { BadgeCheck, Bug, FileLock2, LockKeyhole, PiggyBank } from "lucide-react";
+import { BadgeCheck, Bug, FileLock2, LockKeyhole, PiggyBank, ShieldAlert, ShieldCheck } from "lucide-react";
+
+const SPONSOR_BADGE: Record<string, { cls: string; label: string; hint: string }> = {
+  OWNER_VERIFIED: { cls: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200", label: "Owner-verified sponsor", hint: "The target's on-chain owner() is the sponsor." },
+  POLICY_ATTESTED: { cls: "border-sky-400/40 bg-sky-500/10 text-sky-200", label: "Policy-attested sponsor", hint: "The pinned SECURITY.md attests this sponsor and target. Check that the repository is the project's official one." },
+  UNVERIFIED_SPONSOR: { cls: "border-amber-400/50 bg-amber-400/10 text-amber-100", label: "Unverified sponsor", hint: "Nothing links this sponsor to the target. Disclosures may be intercepted." },
+};
 import { SEVERITIES, explorerAddress } from "../config";
 import type { Program, Snapshot } from "../lib/chain";
 import { dateTime, formatGen, githubBlobUrl, parseGen, policyLabel, shortAddr } from "../lib/format";
@@ -37,6 +43,16 @@ function ProgramCard({ p, payoutBps, account, onTopUp, onReport }: { p: Program;
         </div>
         <StatusBadge status={p.status} />
       </div>
+
+      {SPONSOR_BADGE[p.sponsorStatus] && (
+        <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${SPONSOR_BADGE[p.sponsorStatus].cls}`} title={SPONSOR_BADGE[p.sponsorStatus].hint}>
+          {p.sponsorStatus === "UNVERIFIED_SPONSOR" ? <ShieldAlert size={14} className="mt-0.5 shrink-0" /> : <ShieldCheck size={14} className="mt-0.5 shrink-0" />}
+          <span>
+            <span className="font-semibold">{SPONSOR_BADGE[p.sponsorStatus].label}</span>
+            <span className="block text-[11px] opacity-80">{SPONSOR_BADGE[p.sponsorStatus].hint}</span>
+          </span>
+        </div>
+      )}
 
       <div className="mt-4 glass-inset flex items-center gap-2 px-3 py-2 text-xs">
         <FileLock2 size={14} className="shrink-0 text-sky-300" />

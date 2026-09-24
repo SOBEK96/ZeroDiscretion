@@ -25,6 +25,7 @@ from conftest import (
     FAKE_SELECTOR,
     GEN,
     PAYOUT_BPS,
+    POLICY_TEXT,
     POLICY_URL,
     PROGRAM_DEPOSIT,
     RESEARCHER_BOND,
@@ -34,7 +35,9 @@ from conftest import (
     VARIANT_FUNCTIONS,
     WITHDRAW_SELECTOR,
     abi_entry,
+    attested_policy,
     make_poc,
+    mock_owner,
     mock_policy,
     mock_sourcify,
     mock_triage,
@@ -102,7 +105,8 @@ def test_finding1_fingerprint_is_keccak_of_the_execution_path(chain, direct_bob,
     pid = chain.register(direct_bob)
     rid = chain.submit(direct_charlie, pid, "CRITICAL")
     report = chain.c.get_report(rid)
-    expected = path_fingerprint([[TOKEN, "0x095ea7b3"], [TARGET, WITHDRAW_SELECTOR]])
+    # Target-only: the token approval step is not part of the fingerprint.
+    expected = path_fingerprint([[TARGET, WITHDRAW_SELECTOR]])
     assert report["fingerprint"] == expected
     assert report["call_path"] == f"{TOKEN}.0x095ea7b3 > target.withdraw(uint256)"
     assert chain.c.get_validated_fingerprints(pid) == [
@@ -120,22 +124,52 @@ def test_finding1_distinct_execution_path_is_a_new_finding(chain, direct_bob, di
     chain.assert_invariant()
 
 
-def test_finding1_padded_path_is_caught_by_consensus_duplicate_verdict(chain, direct_vm, direct_bob, direct_charlie):
-    """Adding an incidental step changes the path fingerprint, so the
-    deterministic check cannot see it. The prior validated paths are in the
-    triage context, and a consensus duplicate verdict fails the report
-    closed (bond slashed, nothing locked)."""
+def test_finding1_non_target_padding_is_a_deterministic_duplicate(chain, direct_bob, direct_charlie):
+    """Target-only fingerprint: inserting arbitrary external calls (token
+    balanceOf / approvals on dummy addresses) around the same target step
+    sequence cannot change the fingerprint, so the padded copy is rejected
+    before consensus, with no bond taken."""
+    pid = chain.register(direct_bob)
+    a = chain.submit(direct_charlie, pid, "CRITICAL")
+    assert chain.c.get_report(a)["status"] == "VALIDATED"
+    dummy = "0x7777777777777777777777777777777777777777"
+    padded = make_poc(steps=[
+        {"to": dummy, "calldata": "0x70a08231" + word(1), "value": "0", "expect": "balanceOf on a dummy token"},
+        {"to": TOKEN, "calldata": "0x18160ddd", "value": "0", "expect": "totalSupply"},
+        {"to": TARGET, "calldata": WITHDRAW_SELECTOR + word(999), "value": "0"},
+        {"to": dummy, "calldata": "0xa9059cbb" + word(1) + word(2), "value": "0", "expect": "transfer out"},
+    ])
+    before = snapshot(chain)
+    with chain.vm.expect_revert("ERR_DUPLICATE_VULNERABILITY"):
+        chain.submit(direct_charlie, pid, "CRITICAL", poc=padded)
+    assert snapshot(chain) == before
+    chain.assert_invariant()
+
+
+def test_poc_without_target_calls_is_rejected(chain, direct_bob, direct_charlie):
+    pid = chain.register(direct_bob)
+    with chain.vm.expect_revert("ERR_NO_TARGET_CALLS"):
+        chain.submit(direct_charlie, pid, "CRITICAL",
+                     poc=make_poc(steps=[{"to": TOKEN, "calldata": "0x70a08231" + word(1), "value": "0"}]))
+
+
+def test_finding1_target_padding_is_caught_by_consensus_duplicate_verdict(chain, direct_vm, direct_bob, direct_charlie):
+    """Padding with an extra call INTO the target (for example a view such
+    as op5) does change the target-only fingerprint. The prior validated
+    paths are in the triage context, and a consensus duplicate verdict fails
+    the report closed (bond slashed, nothing locked)."""
     pid = chain.register(direct_bob)
     a = chain.submit(direct_charlie, pid, "CRITICAL")
     fp_a = chain.c.get_report(a)["fingerprint"]
 
     padded = make_poc(steps=[
-        {"to": TOKEN, "calldata": "0x70a08231" + word(1), "value": "0", "expect": "incidental balanceOf"},
+        {"to": TARGET, "calldata": selector("op5(uint256)") + word(1), "value": "0", "expect": "incidental read"},
         {"to": TOKEN, "calldata": "0x095ea7b3" + word(int(TARGET, 16)) + word(1), "value": "0"},
         {"to": TARGET, "calldata": WITHDRAW_SELECTOR + word(10**24), "value": "0"},
     ])
 
     direct_vm.clear_mocks()
+    mock_owner(direct_vm)
     mock_sourcify(direct_vm)
     mock_policy(direct_vm)
     # Matches only if report A's fingerprint was placed in the triage prompt.
@@ -341,12 +375,13 @@ def test_refresh_target_abi_picks_up_an_upgrade(chain, direct_vm, direct_alice, 
 
 def test_abi_consensus_validator_rejects_a_forged_selector_set(chain, direct_vm, direct_bob):
     chain.register(direct_bob)
-    assert direct_vm.run_validator() is True
-    forged = dict(direct_vm._captured_validators[-1][0])
+    # Registration runs two consensus blocks: ABI (index -2), then sponsor (-1).
+    assert direct_vm.run_validator(index=-2) is True
+    forged = dict(direct_vm._captured_validators[-2][0])
     forged["functions"] = dict(forged["functions"], **{FAKE_SELECTOR: "backdoor()"})
-    assert direct_vm.run_validator(leader_result=forged) is False
-    forged = dict(direct_vm._captured_validators[-1][0], fallback=True)
-    assert direct_vm.run_validator(leader_result=forged) is False
+    assert direct_vm.run_validator(leader_result=forged, index=-2) is False
+    forged = dict(direct_vm._captured_validators[-2][0], fallback=True)
+    assert direct_vm.run_validator(leader_result=forged, index=-2) is False
 
 
 # ---------------------------------------------------------------------------
@@ -390,3 +425,59 @@ def test_ledger_invariant_after_rejected_and_duplicate_submissions(chain, direct
     assert chain.balance() == PROGRAM_DEPOSIT + 2 * RESEARCHER_BOND + 2 * GEN
     assert [x["report_id"] for x in chain.c.get_validated_fingerprints(pid)] == [a]
 
+
+
+# ---------------------------------------------------------------------------
+# Unsolicited programs: sponsor authorization
+# ---------------------------------------------------------------------------
+
+
+def test_sponsor_is_owner_verified_when_target_owner_matches(chain, direct_vm, direct_bob):
+    bob = chain.key(direct_bob)
+    remock(direct_vm, owner=bob)
+    pid = chain.register(direct_bob)
+    program = chain.c.get_program(pid)
+    assert program["sponsor_status"] == "OWNER_VERIFIED"
+    assert program["target_owner"] == bob
+
+
+def test_sponsor_is_policy_attested_when_security_md_names_sponsor_and_target(chain, direct_vm, direct_bob):
+    remock(direct_vm, policy={"text": attested_policy(chain.key(direct_bob))})
+    pid = chain.register(direct_bob)
+    program = chain.c.get_program(pid)
+    assert program["sponsor_status"] == "POLICY_ATTESTED"
+    assert program["target_owner"] == ""
+
+
+def test_unsolicited_program_is_flagged_unverified(chain, direct_vm, direct_alice, direct_bob):
+    """A third party (bob) opens a program on a contract owned by someone
+    else (alice), with a policy that attests a different sponsor and a
+    policy that attests bob for a different target: all UNVERIFIED."""
+    alice = chain.key(direct_alice)
+    other_target = "0x8888888888888888888888888888888888888888"
+    for policy in (POLICY_TEXT, attested_policy(alice), attested_policy(chain.key(direct_bob), target=other_target),
+                   attested_policy(chain.key(direct_bob), chain=137)):
+        remock(direct_vm, owner=alice, policy={"text": policy})
+        pid = chain.register(direct_bob)
+        assert chain.c.get_program(pid)["sponsor_status"] == "UNVERIFIED_SPONSOR"
+    chain.assert_invariant()
+
+
+def test_registration_pins_policy_digest_and_rejects_unreachable_policy(chain, direct_vm, direct_bob):
+    import hashlib
+
+    pid = chain.register(direct_bob)
+    assert chain.c.get_program(pid)["policy_digest"] == hashlib.sha256(POLICY_TEXT.encode()).hexdigest()
+    remock(direct_vm, policy={"status": 404})
+    with chain.vm.expect_revert("ERR_POLICY_UNAVAILABLE"):
+        chain.register(direct_bob)
+    assert chain.c.get_protocol_params()["next_program_id"] == 2
+
+
+def test_sponsor_consensus_validator_rejects_forged_attestation(chain, direct_vm, direct_bob):
+    chain.register(direct_bob)
+    assert direct_vm.run_validator() is True
+    forged = dict(direct_vm._captured_validators[-1][0], attested=True)
+    assert direct_vm.run_validator(leader_result=forged) is False
+    forged = dict(direct_vm._captured_validators[-1][0], owner_check="OK", owner=chain.key(direct_bob))
+    assert direct_vm.run_validator(leader_result=forged) is False
