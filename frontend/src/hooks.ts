@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { POLL_MS } from "./config";
 import {
+  describeReadError,
   existingAccount,
   fetchClaimable,
   fetchSnapshot,
@@ -33,7 +34,8 @@ export function useProtocol() {
       setSnapshot(s);
       setError(null);
     } catch (e) {
-      setError((e as Error).message ?? "Failed to read contract state");
+      // Keep the last good snapshot on screen; only surface a one-line reason.
+      setError(describeReadError(e));
     } finally {
       setLoading(false);
     }

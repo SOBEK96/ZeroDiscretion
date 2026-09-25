@@ -123,6 +123,16 @@ const big = (v: unknown): bigint => BigInt(String(v ?? 0));
 const num = (v: unknown): number => Number(v ?? 0);
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
+// viem errors carry multi-line "Details: ... Version: viem@x" dumps; the
+// banner only needs the first line, the full error goes to the console.
+export function describeReadError(e: unknown): string {
+  console.error("Contract read failed", e);
+  const err = e as { shortMessage?: string; message?: string } | null;
+  const first = (err?.shortMessage || err?.message || "").split("\n")[0].trim();
+  if (/address/i.test(first)) return "the configured contract address is invalid.";
+  return first ? first.slice(0, 160) : "the RPC request failed.";
+}
+
 async function view(functionName: string, args: (string | number | bigint)[] = []): Promise<unknown> {
   return readClient().readContract({ address: CONTRACT_ADDRESS, functionName, args, jsonSafeReturn: true });
 }
